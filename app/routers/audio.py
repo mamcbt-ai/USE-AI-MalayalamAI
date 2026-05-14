@@ -19,11 +19,16 @@ async def process_audio(file: UploadFile = File(...)):
     # Speech-to-Text (ASR)
     asr_result = transcribe_audio(temp_file_path)
 
+    # Get text from segments if main text is empty
+    transcript_text = asr_result["text"]
+    if not transcript_text and asr_result.get("segments"):
+        transcript_text = " ".join([seg["text"] for seg in asr_result["segments"]])
+
     # Translation
-    translation_result = translate_text_dummy(asr_result["text"])
+    translation_result = translate_text_dummy(transcript_text)
 
     return {
-    "asr_output": asr_output,
-    "translation_output": translation_output,
-    "reverse_translation": translate_eng_to_ml(translation_output["refined"])
-}
+        "asr_output": asr_result,
+        "translation_output": translation_result,
+        "reverse_translation": translate_eng_to_ml(translation_result["refined"])
+    }
