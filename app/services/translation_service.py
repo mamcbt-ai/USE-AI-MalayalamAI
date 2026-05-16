@@ -1,50 +1,24 @@
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-import torch
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-MODEL_NAME = "ai4bharat/indictrans2-indic-en-1B"
-tokenizer = None
-model = None
+from deep_translator import GoogleTranslator
 
 
-def load_translation_model():
-    global tokenizer, model
-    if tokenizer is None or model is None:
-        try:
-            print("Loading IndicTrans2 Malayalam->English model...")
-            tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-            model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME, trust_remote_code=True)
-            model = model.to(device)
-            print("Translation model loaded successfully")
-        except Exception as e:
-            print(f"Error loading translation model: {e}")
-            return False
-    return True
-
-
-def malayalam_to_english(malayalam_text):
-    if not malayalam_text or malayalam_text.strip() == "":
-        return "No text to translate"
+def malayalam_to_english_google(text):
     try:
-        if not load_translation_model():
-            return f"Translation unavailable: {malayalam_text}"
-        input_text = f"mal_Mlym eng_Latn {malayalam_text.strip()}"
-        inputs = tokenizer(
-            input_text,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=256
-        )
-        inputs = {k: v.to(device) for k, v in inputs.items() if v is not None}
-        with torch.no_grad():
-            outputs = model.generate(**inputs, max_length=512, num_beams=4)
-        translation = tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
-        return translation.strip()
+        translator = GoogleTranslator(source='auto', target='en')
+        result = translator.translate(text)
+        return result
     except Exception as e:
-        print(f"Translation error: {e}")
-        return f"Translation failed: {malayalam_text}"
+        print(f"Google translation error: {e}")
+        return None
+
+
+def english_to_malayalam_google(text):
+    try:
+        translator = GoogleTranslator(source='en', target='ml')
+        result = translator.translate(text)
+        return result
+    except Exception as e:
+        print(f"Google reverse translation error: {e}")
+        return None
 
 
 def malayalam_to_romanized(malayalam_text):
@@ -77,8 +51,11 @@ def refine_english(english_text):
 
 def translate_text_dummy(text):
     try:
+        text = text.strip()
         transliteration = malayalam_to_romanized(text)
-        translation = malayalam_to_english(text)
+        translation = malayalam_to_english_google(text)
+        if not translation:
+            translation = "Could not translate"
         refined = refine_english(translation)
         return {
             "transliteration": transliteration,
@@ -95,53 +72,12 @@ def translate_text_dummy(text):
         }
 
 
-MODEL_NAME_EN_TO_INDIC = "ai4bharat/indictrans2-en-indic-1B"
-tokenizer_en_indic = None
-model_en_indic = None
-
-
-def load_english_to_malayalam_model():
-    global tokenizer_en_indic, model_en_indic
-    if tokenizer_en_indic is None or model_en_indic is None:
-        try:
-            print("Loading IndicTrans2 English->Indic model...")
-            tokenizer_en_indic = AutoTokenizer.from_pretrained(MODEL_NAME_EN_TO_INDIC, trust_remote_code=True)
-            model_en_indic = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME_EN_TO_INDIC, trust_remote_code=True)
-            model_en_indic = model_en_indic.to(device)
-            print("English->Malayalam model loaded successfully")
-        except Exception as e:
-            print(f"Error loading EN->ML model: {e}")
-            return False
-    return True
-
-
-def english_to_malayalam(english_text):
-    if not english_text or english_text.strip() == "":
-        return ""
-    if not load_english_to_malayalam_model():
-        return english_text
-    try:
-        input_text = f"eng_Latn mal_Mlym {english_text.strip()}"
-        inputs = tokenizer_en_indic(
-            input_text,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=256
-        )
-        inputs = {k: v.to(device) for k, v in inputs.items() if v is not None}
-        with torch.no_grad():
-            outputs = model_en_indic.generate(**inputs, max_length=512, num_beams=4)
-        mal_output = tokenizer_en_indic.batch_decode(outputs, skip_special_tokens=True)[0]
-        return mal_output.strip()
-    except Exception as e:
-        print(f"EN->ML translation error: {e}")
-        return english_text
-
-
 def translate_eng_to_ml(text):
     try:
-        ml_text = english_to_malayalam(text)
+        text = text.strip()
+        ml_text = english_to_malayalam_google(text)
+        if not ml_text:
+            ml_text = text
         return {"malayalam": ml_text, "status": "success"}
     except Exception as e:
         return {"malayalam": text, "status": "failed", "error": str(e)}

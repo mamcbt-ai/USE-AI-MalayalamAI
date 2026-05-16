@@ -3,17 +3,15 @@ import torch
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Use large-v3 (best Malayalam accuracy)
-model = whisperx.load_model("large-v3", device=device)
+model = whisperx.load_model("large-v3", device=device, language="ml")
+
 
 def transcribe_audio(file_path: str):
     try:
         audio = whisperx.load_audio(file_path)
 
-        # Let Whisper detect language automatically
-        result = model.transcribe(audio)
+        result = model.transcribe(audio, language="ml")
 
-        # Extract text
         text = result.get("text", "").strip()
 
         return {
