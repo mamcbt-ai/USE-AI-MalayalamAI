@@ -1,14 +1,38 @@
 from deep_translator import GoogleTranslator
 
 
+def is_english(text):
+    if not text:
+        return False
+    latin = sum(1 for c in text if c.isascii() and c.isalpha())
+    total = sum(1 for c in text if c.isalpha())
+    if total == 0:
+        return True
+    return latin / total > 0.85
+
+
 def malayalam_to_english_google(text):
+    if not text or text.strip() == "":
+        return "No text to translate"
+
+    text = text.strip()
+
+    try:
+        translator = GoogleTranslator(source='ml', target='en')
+        result = translator.translate(text)
+        if result and is_english(result):
+            print(f"Translation success: {result}")
+            return result
+    except Exception as e:
+        print(f"Translation error: {e}")
+
     try:
         translator = GoogleTranslator(source='auto', target='en')
         result = translator.translate(text)
-        return result
+        return result if result else text
     except Exception as e:
-        print(f"Google translation error: {e}")
-        return None
+        print(f"Fallback translation error: {e}")
+        return text
 
 
 def english_to_malayalam_google(text):
@@ -17,7 +41,7 @@ def english_to_malayalam_google(text):
         result = translator.translate(text)
         return result
     except Exception as e:
-        print(f"Google reverse translation error: {e}")
+        print(f"Reverse translation error: {e}")
         return None
 
 
