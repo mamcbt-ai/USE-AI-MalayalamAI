@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers import home, audio
 from app.routers import auth
+from app.routers import payment
 from app.core.db import init_db
 
 app = FastAPI(
@@ -25,3 +26,4 @@ app.add_middleware(
 app.include_router(home.router)
 app.include_router(audio.router)
 app.include_router(auth.router)
+app.include_router(payment.router)
