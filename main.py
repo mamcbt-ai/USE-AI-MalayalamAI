@@ -5,6 +5,9 @@ from app.routers import home, audio
 from app.routers import auth
 from app.routers import payment
 from app.core.db import init_db
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI(
     title=settings.APP_NAME,

@@ -1,4 +1,75 @@
 from deep_translator import GoogleTranslator
+import anthropic
+
+# ========================
+# CLAUDE API KEY
+# ========================
+# CLAUDE API KEY
+# ========================
+import os
+
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
+claude_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+
+
+# ========================
+# CLAUDE POST-PROCESSING
+# ========================
+def improve_translation_with_claude(raw_english: str) -> str:
+    try:
+        message = claude_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=500,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"""You are an expert Malayalam-English translator specializing in Kerala dialects and culture.
+
+Speech was recorded and auto-translated from Malayalam. Fix this translation considering:
+
+KERALA DIALECT RULES:
+- Malappuram dialect: informal speech patterns, Arabic-Malayalam mix words
+- Thrissur dialect: unique pronunciation, "Thrissur pooram" cultural references
+- Kozhikode dialect: coastal Malayalam, fish/trade related expressions
+- Old people: classical Malayalam words, formal speech patterns, slower cadence
+- Fast speakers: dropped syllables - reconstruct full meaning from context
+- Village accents: vowel sound changes but meaning preserved
+- Manglish (mixed Malayalam-English): treat English words as part of Malayalam flow
+
+COMMON KERALA EXPRESSIONS TO TRANSLATE CORRECTLY:
+- "cool mood" = calm/relaxed state
+- "enthu" = what/enthusiasm
+- "adipoli" = awesome/excellent
+- "machi" = friend/buddy
+- "alle" = isn't it/right
+- "aano" = is it so
+- "sherikkum" = really/truly
+- "poda" = get lost (casual)
+- "moksha" = relief/salvation
+- "timepass" = passing time/entertainment
+
+TRANSLATION QUALITY RULES:
+1. Fix grammar to natural flowing English
+2. Translate idioms culturally, not literally
+3. Preserve emotional tone (formal/informal/urgent/casual)
+4. Handle noisy audio artifacts - ignore filler sounds
+5. Old people voices: expand contracted speech to full sentences
+6. Fast speech: fill in dropped words from context
+7. Mixed Malayalam-English: seamlessly integrate English words
+
+Raw translation to improve: {raw_english}
+
+Output ONLY the improved English translation.
+No explanations. No quotes. No extra text."""
+                }
+            ]
+        )
+        improved = message.content[0].text.strip()
+        print(f"Claude improved translation: {improved}")
+        return improved
+    except Exception as e:
+        print(f"Claude improvement error: {e}")
+        return raw_english
 
 
 # ========================
@@ -54,18 +125,21 @@ def malayalam_to_romanized(malayalam_text):
 
 # ========================
 # MAIN TRANSLATION PIPELINE
-# (used when WhisperX translate task is not used)
 # ========================
 def translate_text_dummy(text):
     try:
         text = text.strip()
         transliteration = malayalam_to_romanized(text)
-        refined = refine_english(text)
+
+        # Use Claude to improve the WhisperX translation
+        improved = improve_translation_with_claude(text)
+        refined = refine_english(improved)
+
         return {
             "status": "success",
             "original": text,
             "transliteration": transliteration,
-            "translation": text,
+            "translation": improved,
             "refined": refined,
             "confidence": "high"
         }
