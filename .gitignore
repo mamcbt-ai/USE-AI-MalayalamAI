@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environments
+.env
+venv/
+env/
+ml_env/
+
+# Audio
+*.wav
+*.mp3
+
+# Logs
+*.log
+
+# Cache
+.cache/
+
+# AI Models
+models/
+
+# Frontend
+node_modules/
+.next/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db

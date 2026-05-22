@@ -1,0 +1,100 @@
+
+<h2 class="sr-only">Malayalam Voice AI — progress report 19 May 2026</h2>
+<style>
+.sec-title{font-size:12px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 8px}
+.bar-row{display:flex;align-items:center;gap:10px;margin:5px 0}
+.bar-label{font-size:13px;color:var(--color-text-primary);min-width:180px}
+.bar-track{flex:1;height:7px;background:var(--color-background-secondary);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px}
+.bar-pct{font-size:12px;font-weight:500;min-width:36px;text-align:right}
+.metric-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:0 0 16px}
+.metric{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px}
+.metric-val{font-size:22px;font-weight:500;color:var(--color-text-primary)}
+.metric-lbl{font-size:12px;color:var(--color-text-secondary);margin-top:2px}
+.step-row{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:start;padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+.step-row:last-child{border-bottom:none}
+.dot{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0;margin-top:1px}
+.step-title{font-size:13px;font-weight:500;color:var(--color-text-primary)}
+.step-note{font-size:12px;color:var(--color-text-secondary);margin-top:2px}
+.badge{font-size:11px;padding:2px 8px;border-radius:4px;white-space:nowrap;align-self:flex-start;margin-top:2px}
+.divider{border:none;border-top:0.5px solid var(--color-border-tertiary);margin:16px 0}
+.ok-box{background:var(--color-background-success);border:0.5px solid var(--color-border-success);border-radius:var(--border-radius-md);padding:10px 14px;font-size:13px;color:var(--color-text-success);margin:8px 0}
+.warn-box{background:var(--color-background-warning);border:0.5px solid var(--color-border-warning);border-radius:var(--border-radius-md);padding:10px 14px;font-size:13px;color:var(--color-text-warning);margin:8px 0}
+</style>
+
+<div class="metric-row">
+  <div class="metric"><div class="metric-val" style="color:var(--color-text-success)">46</div><div class="metric-lbl">Steps done</div></div>
+  <div class="metric"><div class="metric-val" style="color:var(--color-text-success)">75%</div><div class="metric-lbl">Overall complete</div></div>
+  <div class="metric"><div class="metric-val" style="color:var(--color-text-warning)">1 week</div><div class="metric-lbl">To first earning</div></div>
+  <div class="metric"><div class="metric-val" style="color:var(--color-text-danger)">₹0</div><div class="metric-lbl">Earning now</div></div>
+</div>
+
+<div class="ok-box">✅ Today: Login/register UI live, audio endpoint protected with JWT, usage limits added — your app now has a complete user system</div>
+<div class="warn-box">⚡ Next step is Razorpay payments — after that you can start earning real money</div>
+
+<div class="sec-title">Module progress</div>
+<div class="bar-row"><div class="bar-label">PostgreSQL database</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#1D9E75"></div></div><div class="bar-pct" style="color:var(--color-text-success)">100%</div></div>
+<div class="bar-row"><div class="bar-label">FastAPI backend</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#1D9E75"></div></div><div class="bar-pct" style="color:var(--color-text-success)">100%</div></div>
+<div class="bar-row"><div class="bar-label">WhisperX ASR + Translation</div><div class="bar-track"><div class="bar-fill" style="width:90%;background:#1D9E75"></div></div><div class="bar-pct" style="color:var(--color-text-success)">90%</div></div>
+<div class="bar-row"><div class="bar-label">User login / JWT auth</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#1D9E75"></div></div><div class="bar-pct" style="color:var(--color-text-success)">100%</div></div>
+<div class="bar-row"><div class="bar-label">Frontend UI</div><div class="bar-track"><div class="bar-fill" style="width:90%;background:#1D9E75"></div></div><div class="bar-pct" style="color:var(--color-text-success)">90%</div></div>
+<div class="bar-row"><div class="bar-label">Audio endpoint protection</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#1D9E75"></div></div><div class="bar-pct" style="color:var(--color-text-success)">100%</div></div>
+<div class="bar-row"><div class="bar-label">Usage limits per plan</div><div class="bar-track"><div class="bar-fill" style="width:80%;background:#EF9F27"></div></div><div class="bar-pct" style="color:var(--color-text-warning)">80%</div></div>
+<div class="bar-row"><div class="bar-label">Payments (Razorpay)</div><div class="bar-track"><div class="bar-fill" style="width:0%;background:#E24B4A"></div></div><div class="bar-pct" style="color:var(--color-text-danger)">0%</div></div>
+<div class="bar-row"><div class="bar-label">Deployment (live website)</div><div class="bar-track"><div class="bar-fill" style="width:0%;background:#E24B4A"></div></div><div class="bar-pct" style="color:var(--color-text-danger)">0%</div></div>
+
+<hr class="divider">
+
+<div class="sec-title">What was completed today (19 May)</div>
+
+<div class="step-row">
+  <div class="dot" style="background:var(--color-background-success);color:var(--color-text-success)">✓</div>
+  <div><div class="step-title">Step 45 — Login/Register pages live in frontend</div><div class="step-note">Users can create accounts and log in from the website. Email + password form, JWT token stored in browser, logout button working</div></div>
+  <div class="badge" style="background:var(--color-background-success);color:var(--color-text-success)">Done</div>
+</div>
+
+<div class="step-row">
+  <div class="dot" style="background:var(--color-background-success);color:var(--color-text-success)">✓</div>
+  <div><div class="step-title">Step 46 — Audio endpoint protected with JWT</div><div class="step-note">Unauthenticated requests get 401 error. Only logged-in users can use the mic. Confirmed working with API docs test</div></div>
+  <div class="badge" style="background:var(--color-background-success);color:var(--color-text-success)">Done</div>
+</div>
+
+<div class="step-row">
+  <div class="dot" style="background:var(--color-background-success);color:var(--color-text-success)">✓</div>
+  <div><div class="step-title">Usage limits added</div><div class="step-note">Free plan = 10 recordings/day. Paid plan = unlimited. When limit exceeded, user sees upgrade message</div></div>
+  <div class="badge" style="background:var(--color-background-success);color:var(--color-text-success)">Done</div>
+</div>
+
+<hr class="divider">
+
+<div class="sec-title">Remaining steps — in order</div>
+
+<div class="step-row">
+  <div class="dot" style="background:var(--color-background-success);color:var(--color-text-success)">47</div>
+  <div><div class="step-title">Razorpay payment integration 💰</div><div class="step-note">Create payment plans ₹99/₹249/₹499. When user pays, their plan upgrades to "pro" in database. This is when first money comes in</div></div>
+  <div class="badge" style="background:var(--color-background-success);color:var(--color-text-success)">Next — earning starts</div>
+</div>
+
+<div class="step-row">
+  <div class="dot" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">48</div>
+  <div><div class="step-title">Add upgrade button to frontend</div><div class="step-note">Show pricing page when free user hits limit. "Upgrade to Pro" button opens Razorpay payment</div></div>
+  <div class="badge" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">Week 3</div>
+</div>
+
+<div class="step-row">
+  <div class="dot" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">49</div>
+  <div><div class="step-title">Deploy backend to Railway.app</div><div class="step-note">Push to GitHub → connect Railway → get live API URL. Free tier available, no credit card needed</div></div>
+  <div class="badge" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">Week 4</div>
+</div>
+
+<div class="step-row">
+  <div class="dot" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">50</div>
+  <div><div class="step-title">Deploy frontend to Vercel</div><div class="step-note">Connect GitHub repo to Vercel → your website goes live for anyone in the world to visit</div></div>
+  <div class="badge" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">Week 4</div>
+</div>
+
+<div class="step-row">
+  <div class="dot" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">51</div>
+  <div><div class="step-title">Buy domain + go fully live</div><div class="step-note">malayalamvoice.in (~₹700). Share in Kerala WhatsApp groups, college groups, social media. Get first paying users</div></div>
+  <div class="badge" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">Week 5</div>
+</div>
