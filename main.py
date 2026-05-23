@@ -58,7 +58,13 @@ async def rate_limit_handler(request, exc):
 # =========================
 @app.on_event("startup")
 def on_startup():
-    init_db()
+    try:
+        init_db()
+        print("DB init OK")
+    except Exception as e:
+        print(f"DB init FAILED: {e}")
+        import traceback
+        traceback.print_exc()
 
 # =========================
 # CORS Middleware
