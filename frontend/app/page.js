@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef } from 'react';
 
-const API = 'https://fester-yonder-stoplight.ngrok-free.dev';
+const API = 'https://use-ai-malayalamai-production-ee70.up.railway.app';
 const NGROK_HEADER = { 'ngrok-skip-browser-warning': 'true' };
 
 export default function Home() {
