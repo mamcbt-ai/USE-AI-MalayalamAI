@@ -1,6 +1,7 @@
-﻿# v5 - fix PATH for nix ffmpeg + PyAV conversion
+﻿# v6 - PyAV direct numpy load, no WAV file, no system ffmpeg
 import os
 import av
+import numpy as np
 import tempfile
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
@@ -14,31 +15,39 @@ from app.models.audio_record import AudioRecord
 from app.models.user import User
 from app.core.db import engine
 
-# Fix PATH so ffmpeg (installed via nixpkgs) is found by both our code and WhisperX
-for _p in ["/nix/var/nix/profiles/default/bin", "/usr/bin", "/usr/local/bin"]:
-    if _p not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = _p + ":" + os.environ.get("PATH", "")
-
 router = APIRouter(prefix="/audio", tags=["audio"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 limiter = Limiter(key_func=get_remote_address)
 
 
-def convert_to_wav(input_path: str, output_path: str):
-    """Convert any audio to 16kHz mono WAV using PyAV — no system ffmpeg call needed."""
-    in_container = av.open(input_path)
-    out_container = av.open(output_path, "w", format="wav")
-    out_stream = out_container.add_stream("pcm_s16le", rate=16000, layout="mono")
-    resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
-    for frame in in_container.decode(audio=0):
-        for resampled in resampler.resample(frame):
-            resampled.pts = None
-            for pkt in out_stream.encode(resampled):
-                out_container.mux(pkt)
-    for pkt in out_stream.encode(None):
-        out_container.mux(pkt)
-    out_container.close()
-    in_container.close()
+def webm_to_numpy(input_path: str, target_sr: int = 16000) -> np.ndarray:
+    """Decode WebM/Opus directly to float32 numpy array using PyAV. Skips corrupt packets."""
+    container = av.open(input_path)
+    resampler = av.AudioResampler(format="s16", layout="mono", rate=target_sr)
+    frames = []
+    try:
+        for frame in container.decode(audio=0):
+            try:
+                for rf in resampler.resample(frame):
+                    frames.append(rf.to_ndarray())
+            except Exception:
+                continue  # skip corrupt Opus packets
+    except Exception as e:
+        print(f"PyAV decode warning: {e}")
+    finally:
+        try:
+            for rf in resampler.resample(None):
+                frames.append(rf.to_ndarray())
+        except Exception:
+            pass
+        container.close()
+
+    if not frames:
+        return np.zeros(target_sr, dtype=np.float32)
+
+    audio = np.concatenate(frames, axis=1).flatten().astype(np.float32) / 32768.0
+    print(f"v6: decoded {len(audio)} samples, max_amp={audio.max():.4f}")
+    return audio
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -67,26 +76,21 @@ def check_usage_limit(user: User):
 async def process_audio(request: Request, file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
     check_usage_limit(current_user)
     temp_file_path = None
-    wav_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
             temp_file_path = tmp.name
             content = await file.read()
             tmp.write(content)
-        print(f"v5: {len(content)} bytes, PATH={os.environ.get('PATH','')[:80]}")
+        print(f"v6: received {len(content)} bytes")
 
-        wav_path = temp_file_path.replace(".webm", ".wav")
-        try:
-            convert_to_wav(temp_file_path, wav_path)
-            asr_input = wav_path if os.path.exists(wav_path) else temp_file_path
-            print(f"v5: PyAV conversion OK -> {asr_input}")
-        except Exception as conv_err:
-            print(f"v5: PyAV failed ({conv_err}), using raw webm")
-            asr_input = temp_file_path
+        audio_array = webm_to_numpy(temp_file_path)
 
-        asr_result = transcribe_audio(asr_input)
+        if audio_array.max() < 0.001:
+            print("v6: audio appears silent")
+            return {"status": "failed", "message": "No speech detected (silent audio)"}
+
+        asr_result = transcribe_audio(audio_array)
         english_text = asr_result.get("text", "").strip()
-        print(f"v5: ASR={english_text[:80]}")
 
         if not english_text:
             return {"status": "failed", "message": "No speech detected"}
@@ -116,12 +120,11 @@ async def process_audio(request: Request, file: UploadFile = File(...), current_
         }
 
     except Exception as e:
-        print(f"v5 exception: {e}")
+        print(f"v6 exception: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        for p in [temp_file_path, wav_path]:
-            if p and os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except Exception:
+                pass
