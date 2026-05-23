@@ -1,7 +1,7 @@
-﻿# v3 - hardcoded /usr/bin/ffmpeg for Railway Docker
+﻿# v5 - fix PATH for nix ffmpeg + PyAV conversion
 import os
+import av
 import tempfile
-import subprocess
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session, select
@@ -14,11 +14,32 @@ from app.models.audio_record import AudioRecord
 from app.models.user import User
 from app.core.db import engine
 
+# Fix PATH so ffmpeg (installed via nixpkgs) is found by both our code and WhisperX
+for _p in ["/nix/var/nix/profiles/default/bin", "/usr/bin", "/usr/local/bin"]:
+    if _p not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = _p + ":" + os.environ.get("PATH", "")
+
 router = APIRouter(prefix="/audio", tags=["audio"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 limiter = Limiter(key_func=get_remote_address)
 
-FFMPEG = "/usr/bin/ffmpeg"
+
+def convert_to_wav(input_path: str, output_path: str):
+    """Convert any audio to 16kHz mono WAV using PyAV — no system ffmpeg call needed."""
+    in_container = av.open(input_path)
+    out_container = av.open(output_path, "w", format="wav")
+    out_stream = out_container.add_stream("pcm_s16le", rate=16000, layout="mono")
+    resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
+    for frame in in_container.decode(audio=0):
+        for resampled in resampler.resample(frame):
+            resampled.pts = None
+            for pkt in out_stream.encode(resampled):
+                out_container.mux(pkt)
+    for pkt in out_stream.encode(None):
+        out_container.mux(pkt)
+    out_container.close()
+    in_container.close()
+
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     email = decode_token(token)
@@ -30,6 +51,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
             raise HTTPException(status_code=401, detail="User not found")
         return user
 
+
 def check_usage_limit(user: User):
     with Session(engine) as session:
         from datetime import date
@@ -38,6 +60,7 @@ def check_usage_limit(user: User):
         limit = 10 if user.plan == "free" else 1000
         if len(user_records_today) >= limit:
             raise HTTPException(status_code=429, detail="Daily limit reached.")
+
 
 @router.post("/process")
 @limiter.limit("20/minute")
@@ -50,24 +73,20 @@ async def process_audio(request: Request, file: UploadFile = File(...), current_
             temp_file_path = tmp.name
             content = await file.read()
             tmp.write(content)
-        print(f"v3: saved {len(content)} bytes, ffmpeg={FFMPEG}, exists={os.path.exists(FFMPEG)}")
+        print(f"v5: {len(content)} bytes, PATH={os.environ.get('PATH','')[:80]}")
 
         wav_path = temp_file_path.replace(".webm", ".wav")
-
-        if os.path.exists(FFMPEG):
-            result = subprocess.run(
-                [FFMPEG, "-y", "-i", temp_file_path, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path],
-                capture_output=True, text=True, timeout=30
-            )
-            print(f"ffmpeg rc={result.returncode}, stderr={result.stderr[:200]}")
-            asr_input = wav_path if (os.path.exists(wav_path) and result.returncode == 0) else temp_file_path
-        else:
-            print("ffmpeg not at /usr/bin/ffmpeg, using raw webm")
+        try:
+            convert_to_wav(temp_file_path, wav_path)
+            asr_input = wav_path if os.path.exists(wav_path) else temp_file_path
+            print(f"v5: PyAV conversion OK -> {asr_input}")
+        except Exception as conv_err:
+            print(f"v5: PyAV failed ({conv_err}), using raw webm")
             asr_input = temp_file_path
 
         asr_result = transcribe_audio(asr_input)
         english_text = asr_result.get("text", "").strip()
-        print(f"ASR result: {english_text[:100]}")
+        print(f"v5: ASR={english_text[:80]}")
 
         if not english_text:
             return {"status": "failed", "message": "No speech detected"}
@@ -97,7 +116,7 @@ async def process_audio(request: Request, file: UploadFile = File(...), current_
         }
 
     except Exception as e:
-        print(f"process_audio exception: {e}")
+        print(f"v5 exception: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         for p in [temp_file_path, wav_path]:
