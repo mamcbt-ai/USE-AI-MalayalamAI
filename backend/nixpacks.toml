@@ -1,2 +1,2 @@
-[phases.setup]
-nixPkgs = ["ffmpeg", "libgomp"]
+﻿[phases.setup]
+nixPkgs = ["git", "ffmpeg", "libgomp"]
