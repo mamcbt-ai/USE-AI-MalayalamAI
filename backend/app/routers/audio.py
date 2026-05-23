@@ -1,5 +1,5 @@
-﻿import os
-import shutil
+﻿# v3 - hardcoded /usr/bin/ffmpeg for Railway Docker
+import os
 import tempfile
 import subprocess
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
@@ -18,16 +18,7 @@ router = APIRouter(prefix="/audio", tags=["audio"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 limiter = Limiter(key_func=get_remote_address)
 
-
-def find_ffmpeg():
-    path = shutil.which("ffmpeg")
-    if path:
-        return path
-    for p in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/nix/var/nix/profiles/default/bin/ffmpeg"]:
-        if os.path.exists(p):
-            return p
-    return None
-
+FFMPEG = "/usr/bin/ffmpeg"
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     email = decode_token(token)
@@ -39,7 +30,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
             raise HTTPException(status_code=401, detail="User not found")
         return user
 
-
 def check_usage_limit(user: User):
     with Session(engine) as session:
         from datetime import date
@@ -48,7 +38,6 @@ def check_usage_limit(user: User):
         limit = 10 if user.plan == "free" else 1000
         if len(user_records_today) >= limit:
             raise HTTPException(status_code=429, detail="Daily limit reached.")
-
 
 @router.post("/process")
 @limiter.limit("20/minute")
@@ -61,24 +50,24 @@ async def process_audio(request: Request, file: UploadFile = File(...), current_
             temp_file_path = tmp.name
             content = await file.read()
             tmp.write(content)
+        print(f"v3: saved {len(content)} bytes, ffmpeg={FFMPEG}, exists={os.path.exists(FFMPEG)}")
 
         wav_path = temp_file_path.replace(".webm", ".wav")
 
-        ffmpeg_bin = find_ffmpeg()
-        if ffmpeg_bin:
+        if os.path.exists(FFMPEG):
             result = subprocess.run(
-                [ffmpeg_bin, "-y", "-i", temp_file_path, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path],
+                [FFMPEG, "-y", "-i", temp_file_path, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path],
                 capture_output=True, text=True, timeout=30
             )
-            if result.returncode != 0:
-                print(f"ffmpeg error: {result.stderr}")
+            print(f"ffmpeg rc={result.returncode}, stderr={result.stderr[:200]}")
             asr_input = wav_path if (os.path.exists(wav_path) and result.returncode == 0) else temp_file_path
         else:
-            print("WARNING: ffmpeg not found, sending raw audio to WhisperX")
+            print("ffmpeg not at /usr/bin/ffmpeg, using raw webm")
             asr_input = temp_file_path
 
         asr_result = transcribe_audio(asr_input)
         english_text = asr_result.get("text", "").strip()
+        print(f"ASR result: {english_text[:100]}")
 
         if not english_text:
             return {"status": "failed", "message": "No speech detected"}
@@ -97,7 +86,7 @@ async def process_audio(request: Request, file: UploadFile = File(...), current_
                 session.add(record)
                 session.commit()
         except Exception as db_error:
-            print(f"Database save error: {db_error}")
+            print(f"DB save error: {db_error}")
 
         return {
             "status": "success",
@@ -108,6 +97,7 @@ async def process_audio(request: Request, file: UploadFile = File(...), current_
         }
 
     except Exception as e:
+        print(f"process_audio exception: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         for p in [temp_file_path, wav_path]:
