@@ -10,7 +10,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:admin123@lo
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(DATABASE_URL, echo=True, connect_args={"connect_timeout": 10})
 
 def init_db():
     SQLModel.metadata.create_all(engine)
