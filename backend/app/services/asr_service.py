@@ -1,13 +1,14 @@
-﻿import whisperx
+﻿from faster_whisper import WhisperModel
 import torch
 import re
 import numpy as np
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL_NAME = "small"
-print(f"Loading WhisperX model on {DEVICE}...")
-model = whisperx.load_model(MODEL_NAME, device=DEVICE, compute_type="int8", language="ml")
-print("WhisperX model loaded successfully")
+
+print(f"Loading Whisper model on {DEVICE}...")
+model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type="int8")
+print("Whisper model loaded successfully")
 
 def cleanup_text(text):
     if not text:
@@ -21,27 +22,34 @@ def cleanup_text(text):
 
 def transcribe_audio(audio_input):
     try:
-        # Accept either numpy array or file path
         if isinstance(audio_input, np.ndarray):
             audio = audio_input
-            print(f"Transcribing numpy array: shape={audio.shape}, max={audio.max():.3f}")
         else:
             import soundfile as sf
             audio, sr = sf.read(audio_input, dtype="float32")
             if len(audio.shape) > 1:
                 audio = audio.mean(axis=1)
-            print(f"Transcribing file: {audio_input}, shape={audio.shape}")
 
-        result = model.transcribe(audio, language="ml", task="translate", batch_size=16)
-        raw_text = result.get("text", "").strip()
-        cleaned_text = cleanup_text(raw_text)
-        print(f"Transcription result: {cleaned_text}")
+        print(f"Transcribing: shape={audio.shape}, max={audio.max():.3f}")
+
+        # vad_filter=True uses Silero VAD - no ffmpeg/pyannote/torchcodec needed
+        segments, info = model.transcribe(
+            audio,
+            language="ml",
+            task="translate",
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 500}
+        )
+        text = " ".join([seg.text.strip() for seg in segments])
+        cleaned = cleanup_text(text)
+        print(f"Transcription: {cleaned}")
+
         return {
             "status": "success",
-            "text": cleaned_text,
-            "raw_text": raw_text,
-            "language": result.get("language", "ml"),
-            "segments": result.get("segments", []),
+            "text": cleaned,
+            "raw_text": text,
+            "language": info.language,
+            "segments": [],
             "device": DEVICE,
             "model": MODEL_NAME
         }
