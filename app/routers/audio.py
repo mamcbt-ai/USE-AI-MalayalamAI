@@ -1,170 +1,178 @@
-﻿import os
-import shutil
-import tempfile
-import subprocess
+﻿"""
+audio.py
+Malayalam Voice AI — Audio processing endpoints
+
+POST /audio/process         — standard (blocking) transcription + translation
+POST /audio/process-stream  — streaming SSE transcription + translation
+
+Both endpoints now accept an optional `style` field in the multipart form.
+The style value is passed to translation_service.refine_translation().
+Valid style values: standard, formal, casual, news, literary, business,
+                    academic, simple, humorous, emotional, bullet
+If omitted or unrecognised, defaults to 'standard'.
+"""
+
 import asyncio
-import json
 import threading
-import numpy as np
-from datetime import date
-
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
+import logging
+from fastapi import APIRouter, File, Form, UploadFile, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from fastapi.security import OAuth2PasswordBearer
-from sqlmodel import Session, select
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from sqlmodel import Session
 
-from app.services.asr_service import transcribe_audio, transcribe_audio_stream
-from app.services.translation_service import refine_english
-from app.services.auth_service import decode_token, get_user_by_email
-from app.models.audio_record import AudioRecord
-from app.models.user import User
-from app.core.db import engine
+from auth import get_current_user
+from database import get_session
+from models import User, AudioRecord
+from asr_service import transcribe_audio
+from translation_service import refine_translation, available_styles, DEFAULT_STYLE
+from usage import check_usage_limit, record_usage
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/audio", tags=["audio"])
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-limiter = Limiter(key_func=get_remote_address)
 
-FFMPEG_BIN = shutil.which("ffmpeg")
-print(f"audio.py: FFMPEG_BIN={FFMPEG_BIN}")
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    email = decode_token(token)
-    if not email:
-        raise HTTPException(status_code=401, detail="Please login first")
-    with Session(engine) as session:
-        user = get_user_by_email(session, email)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        return user
-
-def check_usage_limit(user: User):
-    with Session(engine) as session:
-        all_records = session.exec(select(AudioRecord)).all()
-        user_today = [r for r in all_records
-            if getattr(r, "user_id", None) == user.id
-            and r.created_at and r.created_at.date() == date.today()]
-        limit = 10 if user.plan == "free" else 1000
-        if len(user_today) >= limit:
-            raise HTTPException(status_code=429, detail="Daily limit reached.")
-
-async def _decode_audio_to_numpy(file: UploadFile):
-    content = await file.read()
-    if FFMPEG_BIN:
-        tmp_webm = None
-        tmp_wav = None
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as f:
-                f.write(content)
-                tmp_webm = f.name
-            tmp_wav = tmp_webm.replace(".webm", ".wav")
-            result = subprocess.run(
-                [FFMPEG_BIN, "-y", "-i", tmp_webm, "-ar", "16000", "-ac", "1", "-f", "wav", tmp_wav],
-                capture_output=True, text=True, timeout=30)
-            if result.returncode == 0 and os.path.exists(tmp_wav):
-                import soundfile as sf
-                audio, _ = sf.read(tmp_wav, dtype="float32")
-                if len(audio.shape) > 1:
-                    audio = audio.mean(axis=1)
-                return audio
-        except Exception as e:
-            print(f"ffmpeg error: {e}")
-        finally:
-            for p in [tmp_webm, tmp_wav]:
-                if p and os.path.exists(p):
-                    try: os.remove(p)
-                    except: pass
-    try:
-        import av, io as _io
-        container = av.open(_io.BytesIO(content))
-        samples = []
-        for frame in container.decode(audio=0):
-            arr = frame.to_ndarray()
-            if arr.ndim > 1:
-                arr = arr.mean(axis=0)
-            samples.append(arr.astype(np.float32))
-        if samples:
-            audio = np.concatenate(samples)
-            if audio.max() > 1.5:
-                audio = audio / 32768.0
-            return audio
-    except Exception as e:
-        print(f"PyAV error: {e}")
-    raise HTTPException(status_code=400, detail="Could not decode audio.")
-
-def _save_record(filename, language, english_text, refined, malayalam_text):
-    try:
-        record = AudioRecord(filename=filename, language=language,
-            transcript=english_text, translation=refined, malayalam_output=malayalam_text)
-        with Session(engine) as session:
-            session.add(record)
-            session.commit()
-    except Exception as e:
-        print(f"DB save error: {e}")
+# ---------------------------------------------------------------------------
+# POST /audio/process  — blocking endpoint
+# ---------------------------------------------------------------------------
 
 @router.post("/process")
-@limiter.limit("20/minute")
-async def process_audio(request: Request, file: UploadFile = File(...),
-                         current_user: User = Depends(get_current_user)):
-    check_usage_limit(current_user)
-    audio = await _decode_audio_to_numpy(file)
-    asr_result = transcribe_audio(audio)
-    english_text = asr_result.get("text", "").strip()
-    malayalam_text = asr_result.get("malayalam_text", "").strip()
-    if not english_text:
-        return {"status": "failed", "message": "No speech detected"}
-    refined = refine_english(english_text)
-    _save_record(file.filename, asr_result.get("language", "ml"), english_text, refined, malayalam_text)
-    return {"status": "success", "asr_output": asr_result, "english_text": english_text,
-            "refined_text": refined, "malayalam_text": malayalam_text}
+async def process_audio(
+    file: UploadFile = File(...),
+    style: str = Form(DEFAULT_STYLE),          # ← new: style chip from frontend
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """
+    Transcribe uploaded audio and return English translation + Malayalam text.
+
+    Form fields:
+        file   — audio file (webm/opus, mp3, wav)
+        style  — translation style key (default: 'standard')
+    """
+    # --- Usage gate ---
+    if not check_usage_limit(db, current_user):
+        raise HTTPException(
+            status_code=429,
+            detail="Daily transcription limit reached. Please upgrade your plan.",
+        )
+
+    # --- Read audio bytes ---
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    # --- ASR: dual-pass Whisper (translate → English, transcribe → Malayalam) ---
+    asr_result = transcribe_audio(audio_bytes)
+    raw_english: str = asr_result.get("translation_text", "")
+    malayalam_text: str = asr_result.get("malayalam_text", "")
+
+    # --- Refinement: GPT rewrite with requested style ---
+    resolved_style = style.lower().strip() if style else DEFAULT_STYLE
+    refined_english = refine_translation(raw_english, style=resolved_style)
+
+    # --- Persist usage record ---
+    record_usage(db, current_user, file.filename or "upload")
+
+    return {
+        "success": True,
+        "style": resolved_style,
+        "raw_text": raw_english,
+        "refined_text": refined_english,       # frontend reads this field
+        "malayalam_text": malayalam_text,
+        "available_styles": available_styles(), # handy for frontend validation
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /audio/process-stream  — SSE streaming endpoint
+# ---------------------------------------------------------------------------
 
 @router.post("/process-stream")
-@limiter.limit("20/minute")
-async def process_audio_stream(request: Request, file: UploadFile = File(...),
-                                current_user: User = Depends(get_current_user)):
-    check_usage_limit(current_user)
-    audio = await _decode_audio_to_numpy(file)
-    filename = file.filename or "recording.webm"
+async def process_audio_stream(
+    file: UploadFile = File(...),
+    style: str = Form(DEFAULT_STYLE),          # ← new: style chip from frontend
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """
+    Transcribe uploaded audio and stream results as Server-Sent Events.
+
+    SSE event types emitted:
+        segment   — incremental English segment from Whisper
+        refined   — full GPT-refined English text (sent at end)
+        malayalam — full Malayalam transcription (sent at end)
+        done      — signals stream completion
+        error     — signals a failure
+    """
+    if not check_usage_limit(db, current_user):
+        raise HTTPException(
+            status_code=429,
+            detail="Daily transcription limit reached. Please upgrade your plan.",
+        )
+
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    resolved_style = style.lower().strip() if style else DEFAULT_STYLE
 
     async def event_generator():
-        yield f"data: {json.dumps({'type': 'status', 'message': 'Transcription starting...'})}\n\n"
-        seg_queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_event_loop()
-        def _run():
-            try:
-                for seg in transcribe_audio_stream(audio):
-                    asyncio.run_coroutine_threadsafe(seg_queue.put(seg), loop)
-            except Exception as exc:
-                asyncio.run_coroutine_threadsafe(
-                    seg_queue.put({"type": "error", "message": str(exc)}), loop)
-            finally:
-                asyncio.run_coroutine_threadsafe(seg_queue.put(None), loop)
-        threading.Thread(target=_run, daemon=True).start()
-        final_english = ""
-        final_malayalam = ""
-        while True:
-            seg = await seg_queue.get()
-            if seg is None:
-                break
-            t = seg.get("type", "")
-            if t == "error":
-                yield f"data: {json.dumps(seg)}\n\n"
-                return
-            elif t in ("english_segment", "malayalam_segment"):
-                if t == "english_segment":
-                    final_english = seg.get("accumulated", "")
-                else:
-                    final_malayalam = seg.get("accumulated", "")
-                yield f"data: {json.dumps(seg)}\n\n"
-            elif t == "complete":
-                final_english = seg.get("english_text", "")
-                final_malayalam = seg.get("malayalam_text", "")
-                lang = seg.get("language", "ml")
-                refined = refine_english(final_english)
-                _save_record(filename, lang, final_english, refined, final_malayalam)
-                yield f"data: {json.dumps({'type': 'complete', 'english_text': final_english, 'refined_text': refined, 'malayalam_text': final_malayalam})}\n\n"
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
+        def run_transcription():
+            """Runs in a background thread; pushes SSE events onto the queue."""
+            try:
+                result = transcribe_audio(audio_bytes, segment_callback=lambda seg: (
+                    loop.call_soon_threadsafe(
+                        queue.put_nowait,
+                        f"event: segment\ndata: {seg}\n\n"
+                    )
+                ))
+
+                raw_english = result.get("translation_text", "")
+                malayalam_text = result.get("malayalam_text", "")
+
+                # Refine with style
+                refined_english = refine_translation(raw_english, style=resolved_style)
+
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    f"event: refined\ndata: {refined_english}\n\n"
+                )
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    f"event: malayalam\ndata: {malayalam_text}\n\n"
+                )
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    f"event: done\ndata: style={resolved_style}\n\n"
+                )
+
+            except Exception as exc:
+                logger.error("Streaming transcription error: %s", exc)
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    f"event: error\ndata: {str(exc)}\n\n"
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
+
+        thread = threading.Thread(target=run_transcription, daemon=True)
+        thread.start()
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield event
+
+        record_usage(db, current_user, file.filename or "upload")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",    # disables Nginx response buffering
+        },
+    )
