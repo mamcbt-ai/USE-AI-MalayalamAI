@@ -4,7 +4,7 @@ import re
 import numpy as np
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL_NAME = "medium"
+MODEL_NAME = "large-v2"
 
 print(f"Loading Whisper model ({MODEL_NAME}) on {DEVICE}...")
 model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type="int8")
@@ -18,6 +18,7 @@ _COMMON = dict(
     temperature=0,
     no_speech_threshold=0.3,
     condition_on_previous_text=False,
+    initial_prompt="??? ?????? ??????????.",
 )
 
 def cleanup_text(text):
@@ -78,5 +79,7 @@ def transcribe_audio_stream(audio_input):
     full_malayalam = cleanup_text(" ".join(ml_parts))
     yield {"type": "complete", "english_text": full_english,
            "malayalam_text": full_malayalam, "language": en_info.language}
+
+
 
 
