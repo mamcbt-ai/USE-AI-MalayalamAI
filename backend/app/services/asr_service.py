@@ -18,7 +18,7 @@ _COMMON = dict(
     temperature=0,
     no_speech_threshold=0.3,
     condition_on_previous_text=False,
-    initial_prompt="??? ?????? ??????????.",
+    initial_prompt="Malayalam language speech.",
 )
 
 def cleanup_text(text):
@@ -79,6 +79,7 @@ def transcribe_audio_stream(audio_input):
     full_malayalam = cleanup_text(" ".join(ml_parts))
     yield {"type": "complete", "english_text": full_english,
            "malayalam_text": full_malayalam, "language": en_info.language}
+
 
 
 
