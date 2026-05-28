@@ -4,7 +4,7 @@ import re
 import numpy as np
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL_NAME = "large-v2"
+MODEL_NAME = "distil-large-v2"
 
 print(f"Loading Whisper model ({MODEL_NAME}) on {DEVICE}...")
 model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type="int8")
@@ -73,8 +73,8 @@ def _build_params(source_lang: str):
     translate = dict(
         language=source_lang,
         task="translate",
-        beam_size=5,
-        temperature=[0.0, 0.2, 0.4, 0.6],
+        beam_size=2,
+        temperature=[0.0, 0.2],
         no_speech_threshold=0.3,
         condition_on_previous_text=False,
         **_VAD,
@@ -84,8 +84,8 @@ def _build_params(source_lang: str):
     transcribe = dict(
         language=transcribe_lang,
         task="transcribe",
-        beam_size=5,
-        temperature=[0.0, 0.2, 0.4, 0.6],
+        beam_size=2,
+        temperature=[0.0, 0.2],
         no_speech_threshold=0.3,
         condition_on_previous_text=False,
         **_VAD,
