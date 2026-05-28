@@ -1,8 +1,21 @@
 ﻿'use client';
 import { useState, useRef } from 'react';
-
 const API = 'https://use-ai-malayalamai-production-ee70.up.railway.app';
 const NGROK_HEADER = { 'ngrok-skip-browser-warning': 'true' };
+
+const STYLES = [
+  { key: 'standard',  label: 'Standard' },
+  { key: 'formal',    label: 'Formal' },
+  { key: 'casual',    label: 'Casual' },
+  { key: 'news',      label: 'News' },
+  { key: 'literary',  label: 'Literary' },
+  { key: 'business',  label: 'Business' },
+  { key: 'academic',  label: 'Academic' },
+  { key: 'simple',    label: 'Simple' },
+  { key: 'humorous',  label: 'Humorous' },
+  { key: 'emotional', label: 'Emotional' },
+  { key: 'bullet',    label: 'Bullet Points' },
+];
 
 export default function Home() {
   const [screen, setScreen] = useState('login');
@@ -21,14 +34,13 @@ export default function Home() {
   const [malayalamLive, setMalayalamLive] = useState('');
   const [refinedText, setRefinedText] = useState('');
   const [isDone, setIsDone] = useState(false);
+  const [selectedStyle, setSelectedStyle] = useState('standard');
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
-
   const resetResults = () => {
     setEnglishLive(''); setMalayalamLive(''); setRefinedText('');
     setStreamStatus(''); setIsDone(false); setError(null);
   };
-
   const handleRegister = async () => {
     setAuthError('');
     try {
@@ -42,7 +54,6 @@ export default function Home() {
       setToken(data.token); setUserEmail(data.email); setScreen('app');
     } catch (e) { setAuthError(e.message); }
   };
-
   const handleLogin = async () => {
     setAuthError('');
     try {
@@ -58,7 +69,6 @@ export default function Home() {
       setToken(data.access_token); setUserEmail(data.email); setScreen('app');
     } catch (e) { setAuthError(e.message); }
   };
-
   const startRecording = async () => {
     resetResults();
     try {
@@ -76,7 +86,6 @@ export default function Home() {
       setRecording(true);
     } catch (err) { setError('Microphone access denied.'); }
   };
-
   const stopRecording = () => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
@@ -84,11 +93,11 @@ export default function Home() {
       setStreamStatus('Uploading audio...');
     }
   };
-
   const sendAudioStream = async (blob) => {
     try {
       const formData = new FormData();
       formData.append('file', blob, 'recording.webm');
+      formData.append('style', selectedStyle);
       const res = await fetch(`${API}/audio/process-stream`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, ...NGROK_HEADER },
@@ -123,7 +132,6 @@ export default function Home() {
     } catch (err) { setError('Failed: ' + err.message); }
     finally { setLoading(false); }
   };
-
   const loadPlans = async () => {
     try {
       const res = await fetch(`${API}/payment/plans`, { headers: NGROK_HEADER });
@@ -131,7 +139,6 @@ export default function Home() {
       setPlans(data.plans); setShowPlans(true);
     } catch (e) { console.error('Failed to load plans'); }
   };
-
   const handlePayment = async (planId) => {
     try {
       const res = await fetch(`${API}/payment/create-order`, {
@@ -157,7 +164,6 @@ export default function Home() {
       const rzp = new window.Razorpay(options); rzp.open();
     } catch (e) { alert('Payment failed. Please try again.'); }
   };
-
   if (screen === 'login' || screen === 'register') {
     return (
       <main className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center p-6">
@@ -185,9 +191,7 @@ export default function Home() {
       </main>
     );
   }
-
   const hasContent = englishLive || malayalamLive || refinedText || streamStatus || loading;
-
   return (
     <main className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md">
@@ -201,7 +205,7 @@ export default function Home() {
             </div>
           </div>
         </div>
-        <div className="flex flex-col items-center mb-8">
+        <div className="flex flex-col items-center mb-6">
           <button onClick={recording ? stopRecording : startRecording} disabled={loading}
             className={`w-28 h-28 rounded-full text-4xl transition-all duration-200 shadow-lg ${recording ? 'bg-red-600 hover:bg-red-700 animate-pulse' : loading ? 'bg-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}>
             {loading ? '⏳' : recording ? '⏹' : '🎤'}
@@ -209,6 +213,25 @@ export default function Home() {
           <p className="mt-4 text-sm text-gray-400">
             {recording ? 'Recording... tap to stop' : loading ? 'Processing...' : 'Tap to start recording'}
           </p>
+        </div>
+        <div className="mb-6">
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-2 text-center">Translation Style</p>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {STYLES.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setSelectedStyle(key)}
+                disabled={recording || loading}
+                className={`px-3 py-1 rounded-full text-xs font-medium border transition-all duration-150 ${
+                  selectedStyle === key
+                    ? 'bg-green-600 border-green-500 text-white'
+                    : 'bg-gray-800 border-gray-600 text-gray-400 hover:border-gray-400 hover:text-gray-200'
+                } ${recording || loading ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         {streamStatus && !isDone && (
           <div className="flex items-center gap-2 mb-4 text-sm text-yellow-300">
@@ -229,7 +252,9 @@ export default function Home() {
               </p>
             </div>
             <div className="bg-gray-800 rounded-lg p-4">
-              <p className="text-xs text-green-400 mb-2 uppercase tracking-wide">English Translation</p>
+              <p className="text-xs text-green-400 mb-2 uppercase tracking-wide">
+                English Translation · <span className="capitalize text-green-300">{selectedStyle}</span>
+              </p>
               <p className="text-white leading-relaxed min-h-6">
                 {refinedText ? refinedText : isDone ? englishLive : <span className="text-gray-500 italic text-sm">Available after transcription...</span>}
               </p>
