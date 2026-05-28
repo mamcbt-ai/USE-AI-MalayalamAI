@@ -42,7 +42,7 @@ def _load_audio(audio_input):
 def transcribe_audio(audio_input):
     try:
         audio = _load_audio(audio_input)
-        print(f"Transcribing: shape={audio.shape}, max={audio.max():.3f}")
+        print(f"[ASR] shape={audio.shape}, max={audio.max():.4f}, rms={float(np.sqrt(np.mean(audio**2))):.4f}")
         en_segs, en_info = model.transcribe(audio, task="translate", **_COMMON)
         english_text = cleanup_text(" ".join(s.text.strip() for s in en_segs))
         ml_segs, _ = model.transcribe(audio, task="transcribe", **_COMMON)
@@ -78,4 +78,5 @@ def transcribe_audio_stream(audio_input):
     full_malayalam = cleanup_text(" ".join(ml_parts))
     yield {"type": "complete", "english_text": full_english,
            "malayalam_text": full_malayalam, "language": en_info.language}
+
 
