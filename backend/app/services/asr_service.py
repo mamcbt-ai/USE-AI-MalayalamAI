@@ -57,6 +57,21 @@ def _groq_translate(wav_bytes: bytes) -> str:
     text = result.text if hasattr(result, "text") else str(result)
     return cleanup_text(text.strip())
 
+def _groq_transcribe_native(wav_bytes: bytes, source_lang: str) -> str:
+    """Direct transcription pass -> native script via Groq Whisper."""
+    try:
+        result = groq_client.audio.transcriptions.create(
+            file=("audio.wav", wav_bytes),
+            model=WHISPER_MODEL,
+            language=source_lang,
+            response_format="text",
+        )
+        text = result.text if hasattr(result, "text") else str(result)
+        return cleanup_text(text.strip())
+    except Exception as e:
+        print(f"[ASR] Direct transcribe error: {e}")
+        return ""
+
 def _groq_llm_to_native(english_text: str, source_lang: str) -> str:
     """Pass 2: English -> native Unicode via Groq Llama."""
     if not english_text:
@@ -102,7 +117,12 @@ def transcribe_audio_stream(audio_input, source_lang: str = "ml"):
         print(f"[ASR] English  : {english_text}")
         if english_text:
             yield {"type": "english_segment", "text": english_text, "accumulated": english_text}
-        native_text = _groq_llm_to_native(english_text, source_lang)
+        # Try direct Whisper transcription first (more accurate)
+        native_text = _groq_transcribe_native(wav_bytes, source_lang)
+        # Fall back to LLM translation if direct transcription gives English/empty
+        if not native_text or all(ord(c) < 128 for c in native_text if c.strip()):
+            print(f"[ASR] Direct transcribe gave ASCII, falling back to LLM")
+            native_text = _groq_llm_to_native(english_text, source_lang)
         print(f"[ASR] Native   : {native_text}")
         if native_text:
             yield {"type": "malayalam_segment", "text": native_text, "accumulated": native_text}
