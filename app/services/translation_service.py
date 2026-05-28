@@ -104,7 +104,7 @@ DEFAULT_STYLE = "standard"
 # Main refinement function
 # ---------------------------------------------------------------------------
 
-def refine_translation(raw_text: str, style: str = DEFAULT_STYLE) -> str:
+def refine_english(raw_text: str, style: str = DEFAULT_STYLE) -> str:
     """
     Refine raw English text from Whisper using GPT-3.5-turbo.
 
