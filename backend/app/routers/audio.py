@@ -125,7 +125,7 @@ async def process_audio_stream(request: Request, file: UploadFile = File(...), s
     audio = await _decode_audio_to_numpy(file)
     filename = file.filename or "recording.webm"
 
-    async def event_generator():
+    async def event_generator(lang=lang):
         yield f"data: {json.dumps({'type': 'status', 'message': 'Transcription starting...'})}\n\n"
         seg_queue = asyncio.Queue()
         loop = asyncio.get_event_loop()
