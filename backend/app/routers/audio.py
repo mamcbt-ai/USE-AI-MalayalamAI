@@ -8,7 +8,7 @@ import threading
 import numpy as np
 from datetime import date
 
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session, select
@@ -105,11 +105,10 @@ def _save_record(filename, language, english_text, refined, malayalam_text):
 
 @router.post("/process")
 @limiter.limit("20/minute")
-async def process_audio(request: Request, file: UploadFile = File(...),
-                         current_user: User = Depends(get_current_user)):
+async def process_audio(request: Request, file: UploadFile = File(...), style: str = Form("standard"), lang: str = Form("ml"),                         current_user: User = Depends(get_current_user)):
     check_usage_limit(current_user)
     audio = await _decode_audio_to_numpy(file)
-    asr_result = transcribe_audio(audio)
+    asr_result = transcribe_audio(audio, source_lang=lang)
     english_text = asr_result.get("text", "").strip()
     malayalam_text = asr_result.get("malayalam_text", "").strip()
     if not english_text:
@@ -121,8 +120,7 @@ async def process_audio(request: Request, file: UploadFile = File(...),
 
 @router.post("/process-stream")
 @limiter.limit("20/minute")
-async def process_audio_stream(request: Request, file: UploadFile = File(...),
-                                current_user: User = Depends(get_current_user)):
+async def process_audio_stream(request: Request, file: UploadFile = File(...), style: str = Form("standard"), lang: str = Form("ml"),                                current_user: User = Depends(get_current_user)):
     check_usage_limit(current_user)
     audio = await _decode_audio_to_numpy(file)
     filename = file.filename or "recording.webm"
@@ -133,7 +131,7 @@ async def process_audio_stream(request: Request, file: UploadFile = File(...),
         loop = asyncio.get_event_loop()
         def _run():
             try:
-                for seg in transcribe_audio_stream(audio):
+                for seg in transcribe_audio_stream(audio, source_lang=lang):
                     asyncio.run_coroutine_threadsafe(seg_queue.put(seg), loop)
             except Exception as exc:
                 asyncio.run_coroutine_threadsafe(
@@ -161,7 +159,7 @@ async def process_audio_stream(request: Request, file: UploadFile = File(...),
                 final_english = seg.get("english_text", "")
                 final_malayalam = seg.get("malayalam_text", "")
                 lang = seg.get("language", "ml")
-                refined = refine_english(final_english)
+                refined = refine_english(final_english, style=style)
                 _save_record(filename, lang, final_english, refined, final_malayalam)
                 yield f"data: {json.dumps({'type': 'complete', 'english_text': final_english, 'refined_text': refined, 'malayalam_text': final_malayalam})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
