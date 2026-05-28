@@ -74,6 +74,7 @@ def _claude_to_native(english_text: str, source_lang: str) -> str:
     if not english_text:
         return ""
     prompt = _CLAUDE_PROMPTS.get(source_lang, _CLAUDE_PROMPTS["ml"]) + english_text
+    print(f"[ASR] Claude call: lang={source_lang}, text_len={len(english_text)}")
     message = claude_client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=1024,
