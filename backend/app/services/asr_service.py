@@ -1,4 +1,4 @@
-﻿from faster_whisper import WhisperModel
+from faster_whisper import WhisperModel
 import torch
 import re
 import numpy as np
@@ -13,11 +13,11 @@ print(f"Whisper model loaded successfully ({MODEL_NAME}/{DEVICE})")
 _COMMON = dict(
     language="ml",
     vad_filter=True,
-    vad_parameters={"min_silence_duration_ms": 300},
+    vad_parameters={"min_silence_duration_ms": 300, "speech_pad_ms": 400, "threshold": 0.3},
     beam_size=5,
-    best_of=5,
     temperature=0,
-    condition_on_previous_text=True,
+    no_speech_threshold=0.3,
+    condition_on_previous_text=False,
 )
 
 def cleanup_text(text):
@@ -43,8 +43,7 @@ def transcribe_audio(audio_input):
     try:
         audio = _load_audio(audio_input)
         print(f"Transcribing: shape={audio.shape}, max={audio.max():.3f}")
-        en_segs, en_info = model.transcribe(audio, task="translate",
-            initial_prompt="Malayalam speech translated to English:", **_COMMON)
+        en_segs, en_info = model.transcribe(audio, task="translate", **_COMMON)
         english_text = cleanup_text(" ".join(s.text.strip() for s in en_segs))
         ml_segs, _ = model.transcribe(audio, task="transcribe", **_COMMON)
         malayalam_text = cleanup_text(" ".join(s.text.strip() for s in ml_segs))
@@ -59,8 +58,7 @@ def transcribe_audio(audio_input):
 
 def transcribe_audio_stream(audio_input):
     audio = _load_audio(audio_input)
-    en_segs, en_info = model.transcribe(audio, task="translate",
-        initial_prompt="Malayalam speech translated to English:", **_COMMON)
+    en_segs, en_info = model.transcribe(audio, task="translate", **_COMMON)
     en_parts = []
     for seg in en_segs:
         t = seg.text.strip()
@@ -80,3 +78,4 @@ def transcribe_audio_stream(audio_input):
     full_malayalam = cleanup_text(" ".join(ml_parts))
     yield {"type": "complete", "english_text": full_english,
            "malayalam_text": full_malayalam, "language": en_info.language}
+
