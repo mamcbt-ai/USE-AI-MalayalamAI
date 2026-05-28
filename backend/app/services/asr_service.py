@@ -7,7 +7,7 @@ from groq import Groq
 import anthropic
 
 groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-claude_client = anthropic.Anthropic(api_key=os.environ.get("CLAUDE_API_KEY"))
+claude_client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY"))
 
 GROQ_MODEL   = "whisper-large-v3"
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
