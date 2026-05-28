@@ -4,43 +4,33 @@ import numpy as np
 import tempfile
 import soundfile as sf
 from groq import Groq
-import anthropic
 
 groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-claude_client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY"))
+WHISPER_MODEL = "whisper-large-v3"
+LLM_MODEL     = "llama-3.1-8b-instant"
+DEVICE        = "groq-api"
 
-GROQ_MODEL   = "whisper-large-v3"
-CLAUDE_MODEL = "claude-haiku-4-5-20251001"
-DEVICE = "groq+claude"
+print(f"ASR ready: {WHISPER_MODEL} (translate) + {LLM_MODEL} (native script)")
 
-print(f"ASR ready: {GROQ_MODEL} (translate) + {CLAUDE_MODEL} (native script)")
-
-# ---------------------------------------------------------------------------
-# Language config
-# ---------------------------------------------------------------------------
 _LANG_NAMES = {
     "ml": "Malayalam", "ta": "Tamil", "te": "Telugu",
     "kn": "Kannada",   "hi": "Hindi",
 }
 
-_CLAUDE_PROMPTS = {
-    "ml": "Translate the following English text to Malayalam. Output ONLY Malayalam Unicode script (ഇങ്ങനെ), no English, no romanization, no explanation:\n\n",
-    "ta": "Translate the following English text to Tamil. Output ONLY Tamil Unicode script (இப்படி), no English, no romanization, no explanation:\n\n",
-    "te": "Translate the following English text to Telugu. Output ONLY Telugu Unicode script (ఇలా), no English, no romanization, no explanation:\n\n",
-    "kn": "Translate the following English text to Kannada. Output ONLY Kannada Unicode script (ಹೀಗೆ), no English, no romanization, no explanation:\n\n",
-    "hi": "Translate the following English text to Hindi. Output ONLY Hindi Devanagari script (इस तरह), no English, no romanization, no explanation:\n\n",
+_NATIVE_PROMPTS = {
+    "ml": "Translate the following English text to Malayalam Unicode script. Output ONLY Malayalam characters (like: നമസ്കാരം). No English, no explanation.",
+    "ta": "Translate the following English text to Tamil Unicode script. Output ONLY Tamil characters (like: வணக்கம்). No English, no explanation.",
+    "te": "Translate the following English text to Telugu Unicode script. Output ONLY Telugu characters (like: నమస్కారం). No English, no explanation.",
+    "kn": "Translate the following English text to Kannada Unicode script. Output ONLY Kannada characters (like: ನಮಸ್ಕಾರ). No English, no explanation.",
+    "hi": "Translate the following English text to Hindi Devanagari script. Output ONLY Hindi characters (like: नमस्ते). No English, no explanation.",
 }
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 def cleanup_text(text):
     if not text:
         return ""
     text = re.sub(r"\s+", " ", text.strip())
     text = re.sub(r"\.{2,}", ".", text)
     return text.strip()
-
 
 def _to_wav_bytes(audio_input) -> bytes:
     if isinstance(audio_input, np.ndarray):
@@ -57,81 +47,65 @@ def _to_wav_bytes(audio_input) -> bytes:
     os.unlink(tmp_path)
     return wav_bytes
 
-
 def _groq_translate(wav_bytes: bytes) -> str:
-    """Pass 1: speech -> English via Groq Whisper translate."""
+    """Pass 1: speech -> English via Groq Whisper."""
     result = groq_client.audio.translations.create(
         file=("audio.wav", wav_bytes),
-        model=GROQ_MODEL,
+        model=WHISPER_MODEL,
         response_format="text",
     )
     text = result.text if hasattr(result, "text") else str(result)
     return cleanup_text(text.strip())
 
-
-def _claude_to_native(english_text: str, source_lang: str) -> str:
-    """Pass 2: English -> native Unicode script via Claude Haiku."""
+def _groq_llm_to_native(english_text: str, source_lang: str) -> str:
+    """Pass 2: English -> native Unicode via Groq Llama."""
     if not english_text:
         return ""
-    prompt = _CLAUDE_PROMPTS.get(source_lang, _CLAUDE_PROMPTS["ml"]) + english_text
-    print(f"[ASR] Claude call: lang={source_lang}, text_len={len(english_text)}")
-    message = claude_client.messages.create(
-        model=CLAUDE_MODEL,
+    system_prompt = _NATIVE_PROMPTS.get(source_lang, _NATIVE_PROMPTS["ml"])
+    print(f"[ASR] LLM call: lang={source_lang}, len={len(english_text)}")
+    response = groq_client.chat.completions.create(
+        model=LLM_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": english_text},
+        ],
         max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
     )
-    return cleanup_text(message.content[0].text.strip())
+    result = response.choices[0].message.content.strip()
+    print(f"[ASR] LLM result: {result[:80]}")
+    return cleanup_text(result)
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 def transcribe_audio(audio_input, source_lang: str = "ml"):
     try:
         wav_bytes = _to_wav_bytes(audio_input)
-        lang_name = _LANG_NAMES.get(source_lang, source_lang.upper())
         print(f"[ASR] lang={source_lang} bytes={len(wav_bytes)}")
-
         english_text = _groq_translate(wav_bytes)
         print(f"[ASR] English  : {english_text}")
-
-        native_text = _claude_to_native(english_text, source_lang)
-        print(f"[ASR] {lang_name:<10}: {native_text}")
-
+        native_text = _groq_llm_to_native(english_text, source_lang)
+        print(f"[ASR] Native   : {native_text}")
         return {
-            "status": "success",
-            "text": english_text,
-            "malayalam_text": native_text,
-            "raw_text": english_text,
-            "language": source_lang,
-            "source_lang": source_lang,
-            "segments": [],
-            "device": DEVICE,
-            "model": GROQ_MODEL,
+            "status": "success", "text": english_text,
+            "malayalam_text": native_text, "raw_text": english_text,
+            "language": source_lang, "source_lang": source_lang,
+            "segments": [], "device": DEVICE, "model": WHISPER_MODEL,
         }
     except Exception as e:
         print(f"[ASR] Error: {e}")
         return {"status": "failed", "error": str(e), "text": "", "malayalam_text": "", "segments": []}
 
-
 def transcribe_audio_stream(audio_input, source_lang: str = "ml"):
     try:
         wav_bytes = _to_wav_bytes(audio_input)
-        lang_name = _LANG_NAMES.get(source_lang, source_lang.upper())
         print(f"[ASR] stream lang={source_lang} bytes={len(wav_bytes)}")
-
-        # Pass 1: Groq → English
         english_text = _groq_translate(wav_bytes)
         print(f"[ASR] English  : {english_text}")
         if english_text:
             yield {"type": "english_segment", "text": english_text, "accumulated": english_text}
-
-        # Pass 2: Claude → native Unicode
-        native_text = _claude_to_native(english_text, source_lang)
-        print(f"[ASR] {lang_name:<10}: {native_text}")
+        native_text = _groq_llm_to_native(english_text, source_lang)
+        print(f"[ASR] Native   : {native_text}")
         if native_text:
             yield {"type": "malayalam_segment", "text": native_text, "accumulated": native_text}
-
         yield {
             "type": "complete",
             "english_text": english_text,
