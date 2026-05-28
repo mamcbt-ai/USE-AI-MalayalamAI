@@ -4,7 +4,7 @@ import re
 import numpy as np
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL_NAME = "distil-large-v2"
+MODEL_NAME = "large-v2"
 
 print(f"Loading Whisper model ({MODEL_NAME}) on {DEVICE}...")
 model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type="int8")
