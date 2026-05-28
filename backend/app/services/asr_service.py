@@ -1,25 +1,18 @@
-﻿from faster_whisper import WhisperModel
-import torch
+﻿import os
 import re
 import numpy as np
+import tempfile
+import soundfile as sf
+from groq import Groq
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL_NAME = "large-v2"
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+MODEL_NAME = "whisper-large-v3"
+DEVICE = "groq-api"
 
-print(f"Loading Whisper model ({MODEL_NAME}) on {DEVICE}...")
-model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type="int8")
-print(f"Whisper model loaded successfully ({MODEL_NAME}/{DEVICE})")
-
-# ---------------------------------------------------------------------------
-# Shared VAD settings
-# ---------------------------------------------------------------------------
-_VAD = dict(
-    vad_filter=True,
-    vad_parameters={"min_silence_duration_ms": 300, "speech_pad_ms": 400, "threshold": 0.3},
-)
+print(f"ASR service ready: {MODEL_NAME} via Groq API")
 
 # ---------------------------------------------------------------------------
-# Tamil -> Malayalam Unicode corrector
+# Tamil -> Malayalam Unicode corrector (kept as fallback)
 # ---------------------------------------------------------------------------
 _TAMIL_TO_ML = {
     '\u0B85': '\u0D05', '\u0B86': '\u0D06', '\u0B87': '\u0D07',
@@ -38,17 +31,11 @@ _TAMIL_TO_ML = {
     '\u0BC1': '\u0D41', '\u0BC2': '\u0D42', '\u0BC6': '\u0D46',
     '\u0BC7': '\u0D47', '\u0BC8': '\u0D48', '\u0BCA': '\u0D4A',
     '\u0BCB': '\u0D4B', '\u0BCC': '\u0D4C', '\u0BCD': '\u0D4D',
-    '\u0BE6': '\u0D66', '\u0BE7': '\u0D67', '\u0BE8': '\u0D68',
-    '\u0BE9': '\u0D69', '\u0BEA': '\u0D6A', '\u0BEB': '\u0D6B',
-    '\u0BEC': '\u0D6C', '\u0BED': '\u0D6D', '\u0BEE': '\u0D6E',
-    '\u0BEF': '\u0D6F',
 }
-
 _TAMIL_RANGE = range(0x0B80, 0x0C00)
 
 
 def _fix_ml_script(text: str) -> str:
-    """Convert Tamil Unicode codepoints to Malayalam equivalents."""
     if not text:
         return text
     if any(ord(c) in _TAMIL_RANGE for c in text):
@@ -56,54 +43,11 @@ def _fix_ml_script(text: str) -> str:
     return text
 
 
-# ---------------------------------------------------------------------------
-# Dynamic params builder — supports ml, ta, te, kn, hi (and any Whisper lang)
-# ---------------------------------------------------------------------------
-
-def _build_params(source_lang: str):
-    """
-    Build translate + transcribe parameter dicts for the given source language.
-
-    Translate pass  : source_lang -> English
-    Transcribe pass : source_lang -> native Unicode
-      - For Malayalam (ml) we use language=None to avoid Tamil-token confusion;
-        we then apply _fix_ml_script() as a post-processor.
-      - For all other languages Whisper handles them natively.
-    """
-    translate = dict(
-        language=source_lang,
-        task="translate",
-        beam_size=2,
-        temperature=[0.0, 0.2],
-        no_speech_threshold=0.3,
-        condition_on_previous_text=False,
-        **_VAD,
-    )
-    # Malayalam: auto-detect to prevent Tamil-token hallucinations
-    transcribe_lang = None if source_lang == "ml" else source_lang
-    transcribe = dict(
-        language=transcribe_lang,
-        task="transcribe",
-        beam_size=2,
-        temperature=[0.0, 0.2],
-        no_speech_threshold=0.3,
-        condition_on_previous_text=False,
-        **_VAD,
-    )
-    return translate, transcribe
-
-
 def _postprocess_script(text: str, source_lang: str) -> str:
-    """Apply script-level fixes for the given language."""
     if source_lang == "ml":
         return _fix_ml_script(text)
-    # Telugu (te), Kannada (kn), Hindi (hi), Tamil (ta) output correct Unicode natively
     return text
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def cleanup_text(text):
     if not text:
@@ -119,20 +63,64 @@ def cleanup_text(text):
 def _load_audio(audio_input):
     if isinstance(audio_input, np.ndarray):
         return audio_input
-    import soundfile as sf
     audio, _ = sf.read(audio_input, dtype="float32")
     if len(audio.shape) > 1:
         audio = audio.mean(axis=1)
     return audio
 
 
-# ---------------------------------------------------------------------------
-# Language display names (used in logs)
-# ---------------------------------------------------------------------------
+def _to_wav_bytes(audio_input) -> bytes:
+    """Convert audio_input (ndarray or file path) to WAV bytes for Groq API."""
+    if isinstance(audio_input, np.ndarray):
+        audio = audio_input
+    else:
+        audio, sr = sf.read(audio_input, dtype="float32")
+        if len(audio.shape) > 1:
+            audio = audio.mean(axis=1)
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        sf.write(tmp.name, audio, 16000)
+        tmp_path = tmp.name
+
+    with open(tmp_path, "rb") as f:
+        wav_bytes = f.read()
+    os.unlink(tmp_path)
+    return wav_bytes
+
+
 _LANG_NAMES = {
     "ml": "Malayalam", "ta": "Tamil", "te": "Telugu",
     "kn": "Kannada",   "hi": "Hindi",
 }
+
+# Languages where we force language=None on local model (Groq handles natively)
+# For Groq, we always pass the language explicitly
+_GROQ_LANG_MAP = {
+    "ml": "ml", "ta": "ta", "te": "te", "kn": "kn", "hi": "hi",
+}
+
+
+def _call_groq_translate(wav_bytes: bytes) -> str:
+    """Pass 1: speech -> English translation."""
+    translation = client.audio.translations.create(
+        file=("audio.wav", wav_bytes),
+        model=MODEL_NAME,
+        response_format="text",
+    )
+    return cleanup_text(str(translation).strip())
+
+
+def _call_groq_transcribe(wav_bytes: bytes, source_lang: str) -> str:
+    """Pass 2: speech -> native script transcription."""
+    lang = _GROQ_LANG_MAP.get(source_lang, source_lang)
+    transcription = client.audio.transcriptions.create(
+        file=("audio.wav", wav_bytes),
+        model=MODEL_NAME,
+        language=lang,
+        response_format="text",
+    )
+    raw = str(transcription).strip()
+    return cleanup_text(_postprocess_script(raw, source_lang))
 
 
 # ---------------------------------------------------------------------------
@@ -141,19 +129,13 @@ _LANG_NAMES = {
 
 def transcribe_audio(audio_input, source_lang: str = "ml"):
     try:
-        audio = _load_audio(audio_input)
-        print(f"[ASR] lang={source_lang} shape={audio.shape}, max={audio.max():.4f}, rms={float(np.sqrt(np.mean(audio**2))):.4f}")
-
-        translate_params, transcribe_params = _build_params(source_lang)
-
-        en_segs, en_info = model.transcribe(audio, **translate_params)
-        english_text = cleanup_text(" ".join(s.text.strip() for s in en_segs))
-
-        ml_segs, _ = model.transcribe(audio, **transcribe_params)
-        native_raw = " ".join(s.text.strip() for s in ml_segs)
-        native_text = cleanup_text(_postprocess_script(native_raw, source_lang))
-
+        wav_bytes = _to_wav_bytes(audio_input)
         lang_name = _LANG_NAMES.get(source_lang, source_lang.upper())
+        print(f"[ASR] Groq API call: lang={source_lang}, audio={len(wav_bytes)} bytes")
+
+        english_text = _call_groq_translate(wav_bytes)
+        native_text  = _call_groq_transcribe(wav_bytes, source_lang)
+
         print(f"English        : {english_text}")
         print(f"{lang_name:<14} : {native_text}")
 
@@ -162,7 +144,7 @@ def transcribe_audio(audio_input, source_lang: str = "ml"):
             "text": english_text,
             "malayalam_text": native_text,
             "raw_text": english_text,
-            "language": en_info.language,
+            "language": source_lang,
             "source_lang": source_lang,
             "segments": [],
             "device": DEVICE,
@@ -177,38 +159,33 @@ def transcribe_audio(audio_input, source_lang: str = "ml"):
 
 
 def transcribe_audio_stream(audio_input, source_lang: str = "ml"):
-    audio = _load_audio(audio_input)
-    print(f"[ASR] lang={source_lang} shape={audio.shape}, max={audio.max():.4f}, rms={float(np.sqrt(np.mean(audio**2))):.4f}")
+    """
+    Groq is fast enough that we call both passes then yield results.
+    The SSE stream fires all events within ~3 seconds total.
+    """
+    try:
+        wav_bytes = _to_wav_bytes(audio_input)
+        print(f"[ASR] Groq stream: lang={source_lang}, audio={len(wav_bytes)} bytes")
 
-    translate_params, transcribe_params = _build_params(source_lang)
+        # Pass 1: English
+        english_text = _call_groq_translate(wav_bytes)
+        if english_text:
+            yield {"type": "english_segment", "text": english_text,
+                   "accumulated": english_text}
 
-    en_segs, en_info = model.transcribe(audio, **translate_params)
-    en_parts = []
-    for seg in en_segs:
-        t = seg.text.strip()
-        if t:
-            en_parts.append(t)
-            yield {"type": "english_segment", "text": t,
-                   "accumulated": cleanup_text(" ".join(en_parts))}
+        # Pass 2: Native script
+        native_text = _call_groq_transcribe(wav_bytes, source_lang)
+        if native_text:
+            yield {"type": "malayalam_segment", "text": native_text,
+                   "accumulated": native_text}
 
-    full_english = cleanup_text(" ".join(en_parts))
-
-    ml_segs, _ = model.transcribe(audio, **transcribe_params)
-    ml_parts = []
-    for seg in ml_segs:
-        t = seg.text.strip()
-        if t:
-            native_fixed = _postprocess_script(t, source_lang)
-            ml_parts.append(native_fixed)
-            yield {"type": "malayalam_segment", "text": native_fixed,
-                   "accumulated": cleanup_text(" ".join(ml_parts))}
-
-    full_native = cleanup_text(" ".join(ml_parts))
-
-    yield {
-        "type": "complete",
-        "english_text": full_english,
-        "malayalam_text": full_native,
-        "language": en_info.language,
-        "source_lang": source_lang,
-    }
+        yield {
+            "type": "complete",
+            "english_text": english_text,
+            "malayalam_text": native_text,
+            "language": source_lang,
+            "source_lang": source_lang,
+        }
+    except Exception as e:
+        print(f"ASR Stream Error: {e}")
+        yield {"type": "error", "error": str(e)}
