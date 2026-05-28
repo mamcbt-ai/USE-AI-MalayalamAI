@@ -70,6 +70,7 @@ def _load_audio(audio_input):
 
 
 def _to_wav_bytes(audio_input) -> bytes:
+    print(f"[ASR] _to_wav_bytes: type={type(audio_input)}, is_ndarray={isinstance(audio_input, np.ndarray)}")
     """Convert audio_input (ndarray or file path) to WAV bytes for Groq API."""
     if isinstance(audio_input, np.ndarray):
         audio = audio_input
@@ -133,8 +134,13 @@ def transcribe_audio(audio_input, source_lang: str = "ml"):
         lang_name = _LANG_NAMES.get(source_lang, source_lang.upper())
         print(f"[ASR] Groq API call: lang={source_lang}, audio={len(wav_bytes)} bytes")
 
+        print(f"[ASR] wav_bytes size={len(wav_bytes)}")
+        print(f"[ASR] calling Groq translate...")
         english_text = _call_groq_translate(wav_bytes)
+        print(f"[ASR] translate result: {repr(english_text)}")
+        print(f"[ASR] calling Groq transcribe lang={source_lang}...")
         native_text  = _call_groq_transcribe(wav_bytes, source_lang)
+        print(f"[ASR] transcribe result: {repr(native_text)}")
 
         print(f"English        : {english_text}")
         print(f"{lang_name:<14} : {native_text}")
@@ -168,7 +174,10 @@ def transcribe_audio_stream(audio_input, source_lang: str = "ml"):
         print(f"[ASR] Groq stream: lang={source_lang}, audio={len(wav_bytes)} bytes")
 
         # Pass 1: English
+        print(f"[ASR] wav_bytes size={len(wav_bytes)}")
+        print(f"[ASR] calling Groq translate...")
         english_text = _call_groq_translate(wav_bytes)
+        print(f"[ASR] translate result: {repr(english_text)}")
         if english_text:
             yield {"type": "english_segment", "text": english_text,
                    "accumulated": english_text}
