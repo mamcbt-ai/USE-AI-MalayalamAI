@@ -129,9 +129,10 @@ async def process_audio_stream(request: Request, file: UploadFile = File(...), s
         yield f"data: {json.dumps({'type': 'status', 'message': 'Transcription starting...'})}\n\n"
         seg_queue = asyncio.Queue()
         loop = asyncio.get_event_loop()
+        _src_lang = lang
         def _run():
             try:
-                for seg in transcribe_audio_stream(audio, source_lang=lang):
+                for seg in transcribe_audio_stream(audio, source_lang=_src_lang):
                     asyncio.run_coroutine_threadsafe(seg_queue.put(seg), loop)
             except Exception as exc:
                 asyncio.run_coroutine_threadsafe(
