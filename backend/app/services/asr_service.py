@@ -107,7 +107,7 @@ def _call_groq_translate(wav_bytes: bytes) -> str:
         model=MODEL_NAME,
         response_format="text",
     )
-    return cleanup_text(str(translation).strip())
+    return cleanup_text(translation.text.strip() if hasattr(translation, "text") else str(translation).strip())
 
 
 def _call_groq_transcribe(wav_bytes: bytes, source_lang: str) -> str:
@@ -119,7 +119,7 @@ def _call_groq_transcribe(wav_bytes: bytes, source_lang: str) -> str:
         language=lang,
         response_format="text",
     )
-    raw = str(transcription).strip()
+    raw = (transcription.text if hasattr(transcription, "text") else str(transcription)).strip()
     return cleanup_text(_postprocess_script(raw, source_lang))
 
 
