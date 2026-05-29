@@ -46,26 +46,44 @@ def _load_audio(audio_input) -> np.ndarray:
 # ── non-streaming (used by /audio/process) ──────────────────────────────────
 
 def _style_prompt(style: str) -> str:
+    # Short prompts — long prompts get echoed back by Whisper on silent/short audio
     prompts = {
-        "formal":         "Translate this Malayalam speech into formal English:",
-        "casual":         "Translate this Malayalam speech into casual conversational English:",
-        "official":       "Translate this Malayalam speech into official English:",
-        "professional":   "Translate this Malayalam speech into professional English:",
-        "friendly":       "Translate this Malayalam speech into friendly English:",
-        "conversational": "Translate this Malayalam speech into natural conversational English:",
-        "social_media":   "Translate this Malayalam speech into social media style English:",
-        "business":       "Translate this Malayalam speech into business English:",
-        "emotional":      "Translate this Malayalam speech capturing emotions in English:",
-        "cinematic":      "Translate this Malayalam speech into cinematic narrative English:",
-        "academic":       "Translate this Malayalam speech into academic English:",
-        "news":           "Translate this Malayalam speech into news broadcast English:",
-        "literary":       "Translate this Malayalam speech into literary English:",
-        "simple":         "Translate this Malayalam speech into simple plain English:",
-        "humorous":       "Translate this Malayalam speech into humorous English:",
-        "bullet_points":  "Translate this Malayalam speech into bullet point English:",
-        "standard":       "Translate this Malayalam speech accurately into English:",
+        "formal":         "Formal English translation.",
+        "casual":         "Casual English translation.",
+        "official":       "Official English translation.",
+        "professional":   "Professional English translation.",
+        "friendly":       "Friendly English translation.",
+        "conversational": "Conversational English translation.",
+        "social_media":   "Social media style English.",
+        "business":       "Business English translation.",
+        "emotional":      "Emotional English translation.",
+        "cinematic":      "Cinematic English translation.",
+        "academic":       "Academic English translation.",
+        "news":           "News style English translation.",
+        "literary":       "Literary English translation.",
+        "simple":         "Simple English translation.",
+        "humorous":       "Humorous English translation.",
+        "bullet_points":  "English bullet points.",
+        "standard":       "English translation.",
     }
-    return prompts.get(style, "Translate this Malayalam speech accurately into English:")
+    return prompts.get(style, "English translation.")
+
+
+def _is_prompt_echo(text: str, style: str) -> bool:
+    """Return True if Whisper just echoed the prompt instead of transcribing."""
+    if not text:
+        return False
+    lower = text.lower().strip(".")
+    echo_phrases = [
+        "english translation", "formal english", "casual english",
+        "official english", "professional english", "friendly english",
+        "conversational english", "social media style", "business english",
+        "emotional english", "cinematic english", "academic english",
+        "news style english", "literary english", "simple english",
+        "humorous english", "english bullet points",
+        "translate this malayalam",
+    ]
+    return any(lower.startswith(p) for p in echo_phrases)
 
 
 def transcribe_audio(audio_input, style: str = "standard") -> dict:
@@ -82,6 +100,9 @@ def transcribe_audio(audio_input, style: str = "standard") -> dict:
             **_COMMON,
         )
         english_text = cleanup_text(" ".join(s.text.strip() for s in en_segs))
+        if _is_prompt_echo(english_text, style):
+            print(f"Prompt echo detected, clearing english_text: {english_text}")
+            english_text = ""
 
         # Pass 2 – Malayalam Unicode
         ml_segs, _ = model.transcribe(
@@ -139,7 +160,7 @@ def transcribe_audio_stream(audio_input, style: str = "standard"):
     en_parts = []
     for seg in en_segs:
         t = seg.text.strip()
-        if t:
+        if t and not _is_prompt_echo(t, style):
             en_parts.append(t)
             yield {
                 "type": "english_segment",
@@ -147,6 +168,8 @@ def transcribe_audio_stream(audio_input, style: str = "standard"):
                 "accumulated": cleanup_text(" ".join(en_parts)),
             }
     full_english = cleanup_text(" ".join(en_parts))
+    if _is_prompt_echo(full_english, style):
+        full_english = ""
 
     # Pass 2 – Malayalam Unicode (stream segments live)
     ml_segs, _ = model.transcribe(
