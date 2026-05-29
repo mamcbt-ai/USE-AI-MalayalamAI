@@ -86,6 +86,30 @@ def _is_prompt_echo(text: str, style: str) -> bool:
     return any(lower.startswith(p) for p in echo_phrases)
 
 
+def _is_hallucination(text: str) -> bool:
+    """Detect Whisper hallucinations: repeated characters, music tokens, etc."""
+    if not text or len(text) < 3:
+        return False
+    # Check if >60% of chars are the same character (repeated garbage)
+    from collections import Counter
+    counts = Counter(text.replace(" ", ""))
+    if counts:
+        most_common_ratio = counts.most_common(1)[0][1] / len(text.replace(" ", ""))
+        if most_common_ratio > 0.6:
+            print(f"Hallucination detected (repeated chars): {text[:50]}")
+            return True
+    # Check for common Whisper hallucination phrases
+    hallucination_phrases = [
+        "thank you", "thanks for watching", "subscribe", "music",
+        "♪", "[ music ]", "[music]", "subtitles", "captions",
+    ]
+    lower = text.lower()
+    if any(p in lower for p in hallucination_phrases) and len(text) < 30:
+        print(f"Hallucination detected (stock phrase): {text[:50]}")
+        return True
+    return False
+
+
 def transcribe_audio(audio_input, style: str = "standard") -> dict:
     """Transcribe audio; returns both English translation and Malayalam Unicode."""
     try:
@@ -111,6 +135,8 @@ def transcribe_audio(audio_input, style: str = "standard") -> dict:
             **_COMMON,
         )
         malayalam_text = cleanup_text(" ".join(s.text.strip() for s in ml_segs))
+        if _is_hallucination(malayalam_text):
+            malayalam_text = ""
 
         print(f"English   : {english_text}")
         print(f"Malayalam : {malayalam_text}")
@@ -180,7 +206,7 @@ def transcribe_audio_stream(audio_input, style: str = "standard"):
     ml_parts = []
     for seg in ml_segs:
         t = seg.text.strip()
-        if t:
+        if t and not _is_hallucination(t):
             ml_parts.append(t)
             yield {
                 "type": "malayalam_segment",
@@ -188,6 +214,8 @@ def transcribe_audio_stream(audio_input, style: str = "standard"):
                 "accumulated": cleanup_text(" ".join(ml_parts)),
             }
     full_malayalam = cleanup_text(" ".join(ml_parts))
+    if _is_hallucination(full_malayalam):
+        full_malayalam = ""
 
     yield {
         "type": "complete",
