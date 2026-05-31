@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -59,6 +59,7 @@ async def rate_limit_handler(request, exc):
 @app.on_event("startup")
 def on_startup():
     init_db()
+    print("DB init OK")
 
 # =========================
 # CORS Middleware
@@ -78,3 +79,4 @@ app.include_router(home.router)
 app.include_router(audio.router)
 app.include_router(auth.router)
 app.include_router(payment.router)
+
