@@ -1,6 +1,6 @@
 ﻿'use client';
 import { useState, useRef } from 'react';
-const API = 'https://use-ai-malayalamai-production-ee70.up.railway.app';
+const API = '';
 const NGROK_HEADER = { 'ngrok-skip-browser-warning': 'true' };
 const STYLES = [
   { key: 'standard',  label: 'Standard' },
@@ -352,4 +352,5 @@ export default function Home() {
     </main>
   );
 }
+
 

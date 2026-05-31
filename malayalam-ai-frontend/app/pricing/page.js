@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://use-ai-malayalamai-production-ee70.up.railway.app";
+const API_URL = "";
 
 const PLANS = [
   { id: "basic",     name: "Basic",     price: 99,  badge: "",             recordings: "30 recordings/day",    description: "Great for regular use",   color: "#4CAF50" },
@@ -95,4 +95,5 @@ export default function PricingPage() {
     </div>
   );
 }
+
 
