@@ -66,7 +66,7 @@ def on_startup():
 # =========================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*", "https://malayalam-ai-frontend.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -79,4 +79,5 @@ app.include_router(home.router)
 app.include_router(audio.router)
 app.include_router(auth.router)
 app.include_router(payment.router)
+
 
