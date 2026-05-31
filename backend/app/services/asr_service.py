@@ -5,200 +5,137 @@ import tempfile
 import soundfile as sf
 from groq import Groq
 
-groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-WHISPER_MODEL = "whisper-large-v3"
-LLM_MODEL = "llama-3.3-70b-versatile"
-DEVICE = "groq-api"
+groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
+WHISPER_MODEL = 'whisper-large-v3'
+LLM_MODEL = 'llama-3.3-70b-versatile'
+DEVICE = 'groq-api'
 
-print(f"ASR ready: {WHISPER_MODEL} + {LLM_MODEL} via Groq API")
+print(f'ASR ready: {WHISPER_MODEL} + {LLM_MODEL} via Groq API')
 
-LANG_NAMES = {
-    "ml": "Malayalam", "ta": "Tamil", "te": "Telugu",
-    "kn": "Kannada",   "hi": "Hindi",
+LANG_NAMES = {'ml':'Malayalam','ta':'Tamil','te':'Telugu','kn':'Kannada','hi':'Hindi'}
+
+TRANSLATE_PROMPTS = {
+    'ml': 'You are an expert Malayalam-English translator. Translate the Malayalam text to natural English. Output ONLY English.',
+    'ta': 'You are an expert Tamil-English translator. Translate the Tamil text to natural English. Output ONLY English.',
+    'te': 'You are an expert Telugu-English translator. Translate the Telugu text to natural English. Output ONLY English.',
+    'kn': 'You are an expert Kannada-English translator. Translate the Kannada text to natural English. Output ONLY English.',
+    'hi': 'You are an expert Hindi-English translator. Translate the Hindi text to natural English. Output ONLY English.',
 }
 
-NATIVE_PROMPTS = {
-    "ml": """You are an expert Malayalam translator. Translate the given English text into natural, conversational Malayalam Unicode script.
-Rules:
-- Output ONLY Malayalam Unicode characters
-- Use natural spoken Malayalam (not overly formal)
-- Include common slang and colloquial expressions where appropriate
-- Do NOT output English, Roman transliteration, or any explanation
-- Example: "Hello, how are you?" -> "ഹലോ, എങ്ങനെ ഉണ്ട്?"
-Translate now:""",
-    "ta": """You are an expert Tamil translator. Translate the given English text into natural, conversational Tamil Unicode script.
-Rules:
-- Output ONLY Tamil Unicode characters
-- Use natural spoken Tamil including colloquial expressions
-- Do NOT output English, Roman transliteration, or any explanation
-- Example: "Hello, how are you?" -> "வணக்கம், எப்படி இருக்கீங்க?"
-Translate now:""",
-    "te": """You are an expert Telugu translator. Translate the given English text into natural, conversational Telugu Unicode script.
-Rules:
-- Output ONLY Telugu Unicode characters
-- Use natural spoken Telugu including colloquial expressions
-- Do NOT output English, Roman transliteration, or any explanation
-- Example: "Hello, how are you?" -> "హలో, ఎలా ఉన్నారు?"
-Translate now:""",
-    "kn": """You are an expert Kannada translator. Translate the given English text into natural, conversational Kannada Unicode script.
-Rules:
-- Output ONLY Kannada Unicode characters
-- Use natural spoken Kannada including colloquial expressions
-- Do NOT output English, Roman transliteration, or any explanation
-- Example: "Hello, how are you?" -> "ಹಲೋ, ಹೇಗಿದ್ದೀರಾ?"
-Translate now:""",
-    "hi": """You are an expert Hindi translator. Translate the given English text into natural, conversational Hindi Devanagari script.
-Rules:
-- Output ONLY Hindi Devanagari characters
-- Use natural spoken Hindi including colloquial expressions
-- Do NOT output English, Roman transliteration, or any explanation
-- Example: "Hello, how are you?" -> "नमस्ते, कैसे हो?"
-Translate now:""",
+UNICODE_PROMPTS = {
+    'ml': 'You are a Malayalam expert. Write this text in natural Malayalam Unicode script (like: നമസ്കാരം). Output ONLY Malayalam characters, no English.',
+    'ta': 'You are a Tamil expert. Write this text in natural Tamil Unicode script (like: வணக்கம்). Output ONLY Tamil characters, no English.',
+    'te': 'You are a Telugu expert. Write this text in natural Telugu Unicode script (like: నమస్కారం). Output ONLY Telugu characters, no English.',
+    'kn': 'You are a Kannada expert. Write this text in natural Kannada Unicode script (like: ನಮಸ್ಕಾರ). Output ONLY Kannada characters, no English.',
+    'hi': 'You are a Hindi expert. Write this text in natural Hindi Devanagari script (like: नमस्ते). Output ONLY Hindi characters, no English.',
 }
 
 HALLUCINATIONS = [
-    "thank you for watching", "thanks for watching", "subscribe",
-    "music", "[music]", "subtitles", "captions", "thank you",
-    "hello and welcome", "welcome to my channel", "hello, welcome",
-    "translated by", "translation by", "english is a language",
-    "language of the language",
+    'thank you for watching','thanks for watching','subscribe','music','[music]',
+    'subtitles','captions','hello and welcome','welcome to my channel',
+    'translated by','english is a language','language of the language',
+    "i'm here with a story",'hello everyone','story about a little',
 ]
 
-def cleanup_text(text: str) -> str:
-    if not text:
-        return ""
-    text = re.sub(r"\s+", " ", text.strip())
-    text = re.sub(r"\.{2,}", ".", text)
+def cleanup_text(text):
+    if not text: return ''
+    text = re.sub(r'\s+', ' ', text.strip())
     return text.strip()
 
-def _is_hallucination(text: str) -> bool:
-    if not text or len(text) < 3:
-        return False
+def _is_hallucination(text):
+    if not text or len(text) < 3: return False
     from collections import Counter
-    counts = Counter(text.replace(" ", ""))
+    counts = Counter(text.replace(' ', ''))
     if counts:
-        ratio = counts.most_common(1)[0][1] / max(len(text.replace(" ", "")), 1)
-        if ratio > 0.6:
-            return True
+        ratio = counts.most_common(1)[0][1] / max(len(text.replace(' ', '')), 1)
+        if ratio > 0.6: return True
     lower = text.lower()
-    if any(lower.startswith(p) or (p in lower and len(text) < 80) for p in HALLUCINATIONS):
-        return True
+    if any(lower.startswith(p) or (p in lower and len(text) < 80) for p in HALLUCINATIONS): return True
     words = text.split()
-    if len(words) >= 4:
-        if len(set(w.lower() for w in words)) / len(words) < 0.5:
-            return True
+    if len(words) >= 4 and len(set(w.lower() for w in words)) / len(words) < 0.5: return True
     return False
 
-def _to_wav_bytes(audio_input) -> bytes:
-    if isinstance(audio_input, np.ndarray):
-        audio = audio_input
-    else:
-        audio, _ = sf.read(audio_input, dtype="float32")
-        if len(audio.shape) > 1:
-            audio = audio.mean(axis=1)
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+def _to_wav_bytes(audio):
+    if not isinstance(audio, np.ndarray):
+        audio, _ = sf.read(audio, dtype='float32')
+        if len(audio.shape) > 1: audio = audio.mean(axis=1)
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
         sf.write(tmp.name, audio, 16000)
-        tmp_path = tmp.name
-    with open(tmp_path, "rb") as f:
-        wav_bytes = f.read()
-    os.unlink(tmp_path)
-    return wav_bytes
+        p = tmp.name
+    data = open(p,'rb').read()
+    os.unlink(p)
+    return data
 
-def _groq_translate_to_english(wav_bytes: bytes) -> str:
-    """Whisper large-v3 translations -> English"""
+def _load_audio(x):
+    if isinstance(x, np.ndarray): return x
+    a, _ = sf.read(x, dtype='float32')
+    return a.mean(axis=1) if len(a.shape) > 1 else a
+
+def _whisper_transcribe(wav_bytes, lang):
     try:
-        result = groq_client.audio.translations.create(
-            file=("audio.wav", wav_bytes),
-            model=WHISPER_MODEL,
-            response_format="text",
-        )
-        text = result.text if hasattr(result, "text") else str(result)
-        text = cleanup_text(text.strip())
-        if _is_hallucination(text):
-            return ""
-        return text
+        r = groq_client.audio.transcriptions.create(
+            file=('audio.wav', wav_bytes), model=WHISPER_MODEL,
+            language=lang, response_format='text')
+        t = r.text if hasattr(r,'text') else str(r)
+        return cleanup_text(t)
     except Exception as e:
-        print(f"[ASR] Translate error: {e}")
-        return ""
+        print(f'[ASR] transcribe error: {e}')
+        return ''
 
-def _llm_to_native(english_text: str, lang: str) -> str:
-    """Groq Llama: English -> native Unicode script"""
-    if not english_text or lang not in NATIVE_PROMPTS:
-        return ""
+def _llm_call(system_prompt, user_text):
+    if not user_text: return ''
     try:
-        resp = groq_client.chat.completions.create(
+        r = groq_client.chat.completions.create(
             model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": NATIVE_PROMPTS[lang]},
-                {"role": "user", "content": english_text},
-            ],
-            max_tokens=512,
-            temperature=0.1,
-        )
-        result = resp.choices[0].message.content.strip()
-        print(f"[ASR] LLM native ({lang}): {result[:80]}")
-        return cleanup_text(result)
+            messages=[{'role':'system','content':system_prompt},{'role':'user','content':user_text}],
+            max_tokens=512, temperature=0.1)
+        return cleanup_text(r.choices[0].message.content.strip())
     except Exception as e:
-        print(f"[ASR] LLM error: {e}")
-        return ""
+        print(f'[ASR] LLM error: {e}')
+        return ''
 
-def _load_audio(audio_input) -> np.ndarray:
-    if isinstance(audio_input, np.ndarray):
-        return audio_input
-    audio, _ = sf.read(audio_input, dtype="float32")
-    if len(audio.shape) > 1:
-        audio = audio.mean(axis=1)
-    return audio
+def _to_english(native_text, lang):
+    result = _llm_call(TRANSLATE_PROMPTS.get(lang, TRANSLATE_PROMPTS['ml']), native_text)
+    print(f'[ASR] English: {result[:80]}')
+    return result
 
-def transcribe_audio(audio_input, style: str = "standard", source_lang: str = "ml") -> dict:
+def _to_unicode(native_text, lang):
+    if not native_text: return ''
+    ascii_ratio = sum(1 for c in native_text if ord(c)<128)/max(len(native_text),1)
+    if ascii_ratio < 0.3: return native_text
+    result = _llm_call(UNICODE_PROMPTS.get(lang, UNICODE_PROMPTS['ml']), native_text)
+    print(f'[ASR] Unicode fix: {result[:80]}')
+    return result
+
+def transcribe_audio(audio_input, style='standard', source_lang='ml'):
     try:
-        wav_bytes = _to_wav_bytes(_load_audio(audio_input))
-        print(f"[ASR] lang={source_lang} bytes={len(wav_bytes)}")
-
-        english_text = _groq_translate_to_english(wav_bytes)
-        print(f"[ASR] English: {english_text}")
-
-        native_text = _llm_to_native(english_text, source_lang)
-        print(f"[ASR] Native : {native_text}")
-
-        return {
-            "status": "success",
-            "text": english_text,
-            "malayalam_text": native_text,
-            "raw_text": english_text,
-            "language": source_lang,
-            "segments": [],
-            "device": DEVICE,
-            "model": WHISPER_MODEL,
-        }
+        wav = _to_wav_bytes(_load_audio(audio_input))
+        print(f'[ASR] lang={source_lang} bytes={len(wav)}')
+        native = _whisper_transcribe(wav, source_lang)
+        print(f'[ASR] Whisper: {native[:80]}')
+        if _is_hallucination(native): native = ''
+        english = _to_english(native, source_lang)
+        native_unicode = _to_unicode(native, source_lang)
+        print(f'[ASR] Native : {native_unicode[:80]}')
+        return {'status':'success','text':english,'malayalam_text':native_unicode,
+                'raw_text':english,'language':source_lang,'segments':[],'device':DEVICE,'model':WHISPER_MODEL}
     except Exception as e:
-        print(f"[ASR] Error: {e}")
-        return {"status": "failed", "error": str(e), "text": "", "malayalam_text": "", "segments": []}
+        print(f'[ASR] Error: {e}')
+        return {'status':'failed','error':str(e),'text':'','malayalam_text':'','segments':[]}
 
-def transcribe_audio_stream(audio_input, style: str = "standard", source_lang: str = "ml"):
+def transcribe_audio_stream(audio_input, style='standard', source_lang='ml'):
     try:
-        wav_bytes = _to_wav_bytes(_load_audio(audio_input))
-        print(f"[ASR] stream lang={source_lang} bytes={len(wav_bytes)}")
-
-        english_text = _groq_translate_to_english(wav_bytes)
-        print(f"[ASR] English: {english_text}")
-
-        if english_text:
-            yield {"type": "english_segment", "text": english_text, "accumulated": english_text}
-
-        native_text = _llm_to_native(english_text, source_lang)
-        print(f"[ASR] Native : {native_text}")
-
-        if native_text:
-            yield {"type": "malayalam_segment", "text": native_text, "accumulated": native_text}
-
-        yield {
-            "type": "complete",
-            "english_text": english_text,
-            "malayalam_text": native_text,
-            "language": source_lang,
-            "source_lang": source_lang,
-        }
+        wav = _to_wav_bytes(_load_audio(audio_input))
+        print(f'[ASR] stream lang={source_lang} bytes={len(wav)}')
+        native = _whisper_transcribe(wav, source_lang)
+        if _is_hallucination(native): native = ''
+        print(f'[ASR] Whisper: {native[:80]}')
+        english = _to_english(native, source_lang)
+        if english: yield {'type':'english_segment','text':english,'accumulated':english}
+        native_unicode = _to_unicode(native, source_lang)
+        print(f'[ASR] Native : {native_unicode[:80]}')
+        if native_unicode: yield {'type':'malayalam_segment','text':native_unicode,'accumulated':native_unicode}
+        yield {'type':'complete','english_text':english,'malayalam_text':native_unicode,'language':source_lang,'source_lang':source_lang}
     except Exception as e:
-        print(f"[ASR] Stream Error: {e}")
-        yield {"type": "error", "error": str(e)}
+        print(f'[ASR] Stream Error: {e}')
+        yield {'type':'error','error':str(e)}
