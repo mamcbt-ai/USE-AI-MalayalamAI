@@ -1,19 +1,21 @@
+﻿import os
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session
 from pydantic import BaseModel
 import razorpay
+import os
 import hmac
 import hashlib
 from datetime import datetime, timedelta
 from app.services.auth_service import decode_token, get_user_by_email
 from app.core.db import engine
-from app.core.config import settings
-
 # ========================
 # RAZORPAY CLIENT (from .env)
 # ========================
-client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+RAZORPAY_KEY_ID     = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 router = APIRouter(prefix="/payment", tags=["payment"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -58,7 +60,7 @@ def create_order(data: CreateOrderRequest, current_user=Depends(get_current_user
         "amount": plan["amount"],
         "currency": "INR",
         "plan": data.plan,
-        "key_id": settings.RAZORPAY_KEY_ID
+        "key_id": os.environ.get("RAZORPAY_KEY_ID", "")
     }
 
 # ========================
@@ -75,7 +77,7 @@ def verify_payment(data: VerifyPaymentRequest, current_user=Depends(get_current_
     # Step 1: Verify signature
     body = f"{data.razorpay_order_id}|{data.razorpay_payment_id}"
     expected_signature = hmac.new(
-        settings.RAZORPAY_KEY_SECRET.encode(),
+        os.environ.get("RAZORPAY_KEY_SECRET", "").encode(),
         body.encode(),
         hashlib.sha256
     ).hexdigest()
@@ -124,3 +126,4 @@ def get_my_plan(current_user=Depends(get_current_user)):
         "daily_limit": current_user.daily_limit,
         "expires_at": current_user.plan_expires_at
     }
+
