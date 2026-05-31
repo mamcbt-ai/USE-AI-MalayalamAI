@@ -295,7 +295,7 @@ export default function Home() {
               </p>
             </div>
             <div className="bg-gray-800 rounded-lg p-4">
-              <p className="text-xs text-blue-400 mb-2 uppercase tracking-wide">Malayalam (Unicode)</p>
+              <p className="text-xs text-blue-400 mb-2 uppercase tracking-wide">{selectedLang==="ml"?"Malayalam (Unicode)":selectedLang==="ta"?"Tamil (Unicode)":selectedLang==="te"?"Telugu (Unicode)":selectedLang==="kn"?"Kannada (Unicode)":"Hindi (Unicode)"}</p>
               <p className="text-white text-xl leading-relaxed min-h-6 ml-text">
                 {malayalamLive ? malayalamLive : <span className="text-gray-500 italic text-sm">Available after English pass...</span>}
               </p>

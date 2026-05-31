@@ -64,10 +64,15 @@ def _groq_transcribe(wav_bytes: bytes, lang: str) -> str:
             model=WHISPER_MODEL,
             language=lang,
             response_format="text",
-            prompt=f"This is {LANG_NAMES.get(lang, lang)} speech including colloquial and slang expressions.",
+
         )
         text = result.text if hasattr(result, "text") else str(result)
-        return cleanup_text(text.strip())
+        result = cleanup_text(text.strip())
+        # Filter out if Groq echoed back the prompt
+        prompt_echo = f"This is {LANG_NAMES.get(lang, lang)} speech"
+        if result.lower().startswith(prompt_echo.lower()[:20]):
+            return ""
+        return result
     except Exception as e:
         print(f"[ASR] Transcribe error: {e}")
         return ""
