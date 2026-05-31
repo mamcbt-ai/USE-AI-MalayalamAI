@@ -121,7 +121,7 @@ export default function Home() {
       formData.append('file', blob, 'recording.webm');
       formData.append('style', selectedStyle);
       formData.append('lang', selectedLang);
-      const res = await fetch(`${API}/audio/process-stream`, {
+      const res = await fetch(`${API}/audio/process`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, ...NGROK_HEADER },
         body: formData,
@@ -352,6 +352,8 @@ export default function Home() {
     </main>
   );
 }
+
+
 
 
 
