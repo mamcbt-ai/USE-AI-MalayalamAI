@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+﻿from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlmodel import Session, select
@@ -55,7 +55,7 @@ def get_user_by_email(session: Session, email: str):
 
 def create_user(session: Session, email: str, password: str):
     hashed = hash_password(password)
-    user = User(email=email, hashed_password=hashed)
+    user = User(email=email, hashed_password=hashed, plan="free", daily_limit=10)
     session.add(user)
     session.commit()
     session.refresh(user)
