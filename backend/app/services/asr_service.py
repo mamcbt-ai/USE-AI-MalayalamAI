@@ -1,4 +1,4 @@
-from faster_whisper import WhisperModel
+﻿from faster_whisper import WhisperModel
 import torch
 import re
 import numpy as np
@@ -10,7 +10,7 @@ print(f"Loading Whisper model ({MODEL_NAME}) on {DEVICE}...")
 model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type="int8")
 print(f"Whisper model loaded successfully ({MODEL_NAME}/{DEVICE})")
 
-# ── shared Whisper kwargs ────────────────────────────────────────────────────
+# â”€â”€ shared Whisper kwargs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _COMMON = dict(
     language="ml",
     vad_filter=True,
@@ -43,10 +43,10 @@ def _load_audio(audio_input) -> np.ndarray:
     return audio
 
 
-# ── non-streaming (used by /audio/process) ──────────────────────────────────
+# â”€â”€ non-streaming (used by /audio/process) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _style_prompt(style: str) -> str:
-    # Short prompts — long prompts get echoed back by Whisper on silent/short audio
+    # Short prompts â€” long prompts get echoed back by Whisper on silent/short audio
     prompts = {
         "formal":         "Formal English translation.",
         "casual":         "Casual English translation.",
@@ -101,7 +101,7 @@ def _is_hallucination(text: str) -> bool:
     # Check for common Whisper hallucination phrases
     hallucination_phrases = [
         "thank you", "thanks for watching", "subscribe", "music",
-        "♪", "[ music ]", "[music]", "subtitles", "captions",
+        "â™ª", "[ music ]", "[music]", "subtitles", "captions",
     ]
     lower = text.lower()
     if any(p in lower for p in hallucination_phrases) and len(text) < 30:
@@ -110,29 +110,30 @@ def _is_hallucination(text: str) -> bool:
     return False
 
 
-def transcribe_audio(audio_input, style: str = "standard") -> dict:
+def transcribe_audio(audio_input, style: str = "standard", source_lang: str = "ml") -> dict:
     """Transcribe audio; returns both English translation and Malayalam Unicode."""
     try:
         audio = _load_audio(audio_input)
         print(f"Transcribing: shape={audio.shape}, max={audio.max():.3f}")
 
-        # Pass 1 – English translation
+        # Pass 1 â€“ English translation
+        common_kwargs = {**_COMMON, "language": source_lang}
         en_segs, en_info = model.transcribe(
             audio,
             task="translate",
             initial_prompt=_style_prompt(style),
-            **_COMMON,
+            **common_kwargs,
         )
         english_text = cleanup_text(" ".join(s.text.strip() for s in en_segs))
         if _is_prompt_echo(english_text, style):
             print(f"Prompt echo detected, clearing english_text: {english_text}")
             english_text = ""
 
-        # Pass 2 – Malayalam Unicode
+        # Pass 2 â€“ Malayalam Unicode
         ml_segs, _ = model.transcribe(
             audio,
             task="transcribe",
-            **_COMMON,
+            **common_kwargs,
         )
         malayalam_text = cleanup_text(" ".join(s.text.strip() for s in ml_segs))
         if _is_hallucination(malayalam_text):
@@ -163,7 +164,7 @@ def transcribe_audio(audio_input, style: str = "standard") -> dict:
         }
 
 
-# ── streaming generator (used by /audio/process-stream) ─────────────────────
+# â”€â”€ streaming generator (used by /audio/process-stream) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def transcribe_audio_stream(audio_input, style: str = "standard"):
     """
@@ -176,13 +177,14 @@ def transcribe_audio_stream(audio_input, style: str = "standard"):
     """
     audio = _load_audio(audio_input)
 
-    # Pass 1 – English translation (stream segments live)
-    en_segs, en_info = model.transcribe(
-        audio,
-        task="translate",
-        initial_prompt=_style_prompt(style),
-        **_COMMON,
-    )
+    # Pass 1 â€“ English translation (stream segments live)
+    common_kwargs = {**_COMMON, "language": source_lang}
+        en_segs, en_info = model.transcribe(
+            audio,
+            task="translate",
+            initial_prompt=_style_prompt(style),
+            **common_kwargs,
+        )
     en_parts = []
     for seg in en_segs:
         t = seg.text.strip()
@@ -197,12 +199,12 @@ def transcribe_audio_stream(audio_input, style: str = "standard"):
     if _is_prompt_echo(full_english, style):
         full_english = ""
 
-    # Pass 2 – Malayalam Unicode (stream segments live)
+    # Pass 2 â€“ Malayalam Unicode (stream segments live)
     ml_segs, _ = model.transcribe(
-        audio,
-        task="transcribe",
-        **_COMMON,
-    )
+            audio,
+            task="transcribe",
+            **common_kwargs,
+        )
     ml_parts = []
     for seg in ml_segs:
         t = seg.text.strip()
@@ -223,3 +225,4 @@ def transcribe_audio_stream(audio_input, style: str = "standard"):
         "malayalam_text": full_malayalam,
         "language": en_info.language,
     }
+

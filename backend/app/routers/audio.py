@@ -1,4 +1,4 @@
-import os
+﻿import os
 import shutil
 import tempfile
 import subprocess
@@ -31,7 +31,7 @@ FFMPEG_BIN = shutil.which("ffmpeg")
 print(f"audio.py: FFMPEG_BIN={FFMPEG_BIN}")
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     email = decode_token(token)
@@ -137,7 +137,7 @@ def _save_record(filename, language, english_text, refined, malayalam_text):
         print(f"DB save error: {db_err}")
 
 
-# ── POST /audio/process  (original, non-streaming) ───────────────────────────
+# â”€â”€ POST /audio/process  (original, non-streaming) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.post("/process")
 @limiter.limit("20/minute")
@@ -145,12 +145,13 @@ async def process_audio(
     request: Request,
     file: UploadFile = File(...),
     style: str = Form("standard"),
+    lang: str = Form("ml"),
     current_user: User = Depends(get_current_user),
 ):
     check_usage_limit(current_user)
 
     audio = await _decode_audio_to_numpy(file)
-    asr_result = transcribe_audio(audio, style=style)
+    asr_result = transcribe_audio(audio, style=style, source_lang=lang)
 
     english_text = asr_result.get("text", "").strip()
     malayalam_text = asr_result.get("malayalam_text", "").strip()
@@ -171,7 +172,7 @@ async def process_audio(
     }
 
 
-# ── POST /audio/process-stream  (SSE live streaming) ─────────────────────────
+# â”€â”€ POST /audio/process-stream  (SSE live streaming) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.post("/process-stream")
 @limiter.limit("20/minute")
@@ -258,3 +259,4 @@ async def process_audio_stream(
             "Connection": "keep-alive",
         },
     )
+
