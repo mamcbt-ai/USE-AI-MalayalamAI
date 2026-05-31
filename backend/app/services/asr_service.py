@@ -29,7 +29,14 @@ TRANSLATE_PROMPTS = {
 
 def cleanup_text(text):
     if not text: return ''
-    return re.sub(r'\s+', ' ', text.strip()).strip()
+    text = re.sub(r'\s+', ' ', text.strip()).strip()
+    # Remove repeated sentences
+    sentences = [s.strip() for s in re.split(r'[.!?。।]', text) if s.strip()]
+    seen = []
+    for s in sentences:
+        if s not in seen:
+            seen.append(s)
+    return '. '.join(seen).strip()
 
 def _to_wav_bytes(audio):
     if not isinstance(audio, np.ndarray):
