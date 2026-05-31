@@ -118,7 +118,7 @@ def transcribe_audio(audio_input, style: str = "standard", source_lang: str = "m
 
         # Pass 1 â€“ English translation
         common_kwargs = {**_COMMON, "language": source_lang}
-        en_segs, en_info = model.transcribe(
+    en_segs, en_info = model.transcribe(
             audio,
             task="translate",
             initial_prompt=_style_prompt(style),
@@ -179,7 +179,7 @@ def transcribe_audio_stream(audio_input, style: str = "standard"):
 
     # Pass 1 â€“ English translation (stream segments live)
     common_kwargs = {**_COMMON, "language": source_lang}
-        en_segs, en_info = model.transcribe(
+    en_segs, en_info = model.transcribe(
             audio,
             task="translate",
             initial_prompt=_style_prompt(style),
@@ -225,4 +225,5 @@ def transcribe_audio_stream(audio_input, style: str = "standard"):
         "malayalam_text": full_malayalam,
         "language": en_info.language,
     }
+
 
