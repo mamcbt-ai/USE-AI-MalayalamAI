@@ -206,7 +206,7 @@ async def process_audio_stream(
         def _run_whisper():
             """Run Whisper synchronously in a thread; push each segment to the async queue."""
             try:
-                for seg in transcribe_audio_stream(audio, style=style):
+                for seg in transcribe_audio_stream(audio, style=style, source_lang=lang):
                     asyncio.run_coroutine_threadsafe(seg_queue.put(seg), loop)
             except Exception as exc:
                 asyncio.run_coroutine_threadsafe(
@@ -259,4 +259,5 @@ async def process_audio_stream(
             "Connection": "keep-alive",
         },
     )
+
 
