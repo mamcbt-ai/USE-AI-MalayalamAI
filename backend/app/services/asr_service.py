@@ -35,6 +35,8 @@ def _to_wav_bytes(audio):
     if not isinstance(audio, np.ndarray):
         audio, _ = sf.read(audio, dtype='float32')
         if len(audio.shape) > 1: audio = audio.mean(axis=1)
+    # Trim to 25 seconds max (Sarvam API limit is 30s)
+    audio = audio[:25*16000]
     peak = np.max(np.abs(audio))
     if peak > 0.95: audio = audio * (0.95 / peak)
     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
