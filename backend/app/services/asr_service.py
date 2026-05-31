@@ -1,23 +1,15 @@
-﻿from faster_whisper import WhisperModel
-import torch
+﻿import os
 import re
 import numpy as np
+import tempfile
+import soundfile as sf
+from groq import Groq
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL_NAME = "small"
+groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+WHISPER_MODEL = "whisper-large-v3"
+DEVICE = "groq-api"
 
-print(f"Loading Whisper model ({MODEL_NAME}) on {DEVICE}...")
-model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type="int8")
-print(f"Whisper model loaded successfully ({MODEL_NAME}/{DEVICE})")
-
-_BASE_COMMON = dict(
-    vad_filter=True,
-    vad_parameters={"min_silence_duration_ms": 300},
-    beam_size=5,
-    best_of=5,
-    temperature=0,
-    condition_on_previous_text=True,
-)
+print(f"ASR ready: {WHISPER_MODEL} via Groq API")
 
 def cleanup_text(text: str) -> str:
     if not text:
@@ -29,168 +21,125 @@ def cleanup_text(text: str) -> str:
         text = text[0].upper() + text[1:]
     return text
 
-def _load_audio(audio_input) -> np.ndarray:
-    if isinstance(audio_input, np.ndarray):
-        return audio_input
-    import soundfile as sf
-    audio, _ = sf.read(audio_input, dtype="float32")
-    if len(audio.shape) > 1:
-        audio = audio.mean(axis=1)
-    return audio
-
-def _style_prompt(style: str) -> str:
-    prompts = {
-        "formal":         "Formal English translation.",
-        "casual":         "Casual English translation.",
-        "official":       "Official English translation.",
-        "professional":   "Professional English translation.",
-        "friendly":       "Friendly English translation.",
-        "conversational": "Conversational English translation.",
-        "social_media":   "Social media style English.",
-        "business":       "Business English translation.",
-        "emotional":      "Emotional English translation.",
-        "cinematic":      "Cinematic English translation.",
-        "academic":       "Academic English translation.",
-        "news":           "News style English translation.",
-        "literary":       "Literary English translation.",
-        "simple":         "Simple English translation.",
-        "humorous":       "Humorous English translation.",
-        "bullet_points":  "English bullet points.",
-        "standard":       "English translation.",
-    }
-    return prompts.get(style, "English translation.")
-
-def _is_prompt_echo(text: str, style: str) -> bool:
-    if not text:
-        return False
-    lower = text.lower().strip(".")
-    echo_phrases = [
-        "english translation", "formal english", "casual english",
-        "official english", "professional english", "friendly english",
-        "conversational english", "social media style", "business english",
-        "emotional english", "cinematic english", "academic english",
-        "news style english", "literary english", "simple english",
-        "humorous english", "english bullet points",
-        "translate this malayalam",
-    ]
-    return any(lower.startswith(p) for p in echo_phrases)
-
 def _is_hallucination(text: str) -> bool:
     if not text or len(text) < 3:
         return False
     from collections import Counter
     counts = Counter(text.replace(" ", ""))
     if counts:
-        most_common_ratio = counts.most_common(1)[0][1] / len(text.replace(" ", ""))
-        if most_common_ratio > 0.6:
-            print(f"Hallucination detected (repeated chars): {text[:50]}")
+        ratio = counts.most_common(1)[0][1] / max(len(text.replace(" ", "")), 1)
+        if ratio > 0.6:
             return True
-    hallucination_phrases = [
-        "thank you", "thanks for watching", "subscribe", "music",
-        "♪", "[ music ]", "[music]", "subtitles", "captions",
-    ]
+    bad = ["thank you", "thanks for watching", "subscribe", "music", "[music]", "subtitles"]
     lower = text.lower()
-    if any(p in lower for p in hallucination_phrases) and len(text) < 30:
-        print(f"Hallucination detected (stock phrase): {text[:50]}")
+    if any(p in lower for p in bad) and len(text) < 30:
         return True
     return False
 
+def _to_wav_bytes(audio_input) -> bytes:
+    if isinstance(audio_input, np.ndarray):
+        audio = audio_input
+    else:
+        audio, _ = sf.read(audio_input, dtype="float32")
+        if len(audio.shape) > 1:
+            audio = audio.mean(axis=1)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        sf.write(tmp.name, audio, 16000)
+        tmp_path = tmp.name
+    with open(tmp_path, "rb") as f:
+        wav_bytes = f.read()
+    os.unlink(tmp_path)
+    return wav_bytes
+
+LANG_NAMES = {
+    "ml": "Malayalam", "ta": "Tamil", "te": "Telugu",
+    "kn": "Kannada", "hi": "Hindi",
+}
+
+def _groq_transcribe(wav_bytes: bytes, lang: str) -> str:
+    """Native script via Groq Whisper large-v3 transcription."""
+    try:
+        result = groq_client.audio.transcriptions.create(
+            file=("audio.wav", wav_bytes),
+            model=WHISPER_MODEL,
+            language=lang,
+            response_format="text",
+            prompt=f"This is {LANG_NAMES.get(lang, lang)} speech including colloquial and slang expressions.",
+        )
+        text = result.text if hasattr(result, "text") else str(result)
+        return cleanup_text(text.strip())
+    except Exception as e:
+        print(f"[ASR] Transcribe error: {e}")
+        return ""
+
+def _groq_translate(wav_bytes: bytes, lang: str) -> str:
+    """English translation via Groq Whisper large-v3."""
+    try:
+        result = groq_client.audio.translations.create(
+            file=("audio.wav", wav_bytes),
+            model=WHISPER_MODEL,
+            response_format="text",
+            prompt=f"Translate this {LANG_NAMES.get(lang, lang)} speech to English, including colloquial and slang expressions.",
+        )
+        text = result.text if hasattr(result, "text") else str(result)
+        return cleanup_text(text.strip())
+    except Exception as e:
+        print(f"[ASR] Translate error: {e}")
+        return ""
+
 def transcribe_audio(audio_input, style: str = "standard", source_lang: str = "ml") -> dict:
     try:
-        audio = _load_audio(audio_input)
-        print(f"Transcribing: shape={audio.shape}, max={audio.max():.3f}, lang={source_lang}")
+        wav_bytes = _to_wav_bytes(audio_input)
+        print(f"[ASR] lang={source_lang} bytes={len(wav_bytes)}")
 
-        common = {**_BASE_COMMON, "language": source_lang}
+        english_text = _groq_translate(wav_bytes, source_lang)
+        print(f"[ASR] English  : {english_text}")
 
-        en_segs, en_info = model.transcribe(
-            audio,
-            task="translate",
-            initial_prompt=_style_prompt(style),
-            **common,
-        )
-        english_text = cleanup_text(" ".join(s.text.strip() for s in en_segs))
-        if _is_prompt_echo(english_text, style):
-            english_text = ""
-
-        ml_segs, _ = model.transcribe(
-            audio,
-            task="transcribe",
-            **common,
-        )
-        native_text = cleanup_text(" ".join(s.text.strip() for s in ml_segs))
+        native_text = _groq_transcribe(wav_bytes, source_lang)
         if _is_hallucination(native_text):
             native_text = ""
-
-        print(f"English  : {english_text}")
-        print(f"Native   : {native_text}")
+        print(f"[ASR] Native   : {native_text}")
 
         return {
             "status": "success",
             "text": english_text,
             "malayalam_text": native_text,
             "raw_text": english_text,
-            "language": en_info.language,
+            "language": source_lang,
             "segments": [],
             "device": DEVICE,
-            "model": MODEL_NAME,
+            "model": WHISPER_MODEL,
         }
-
     except Exception as e:
-        print(f"ASR Error: {e}")
-        return {
-            "status": "failed",
-            "error": str(e),
-            "text": "",
-            "malayalam_text": "",
-            "segments": [],
-        }
+        print(f"[ASR] Error: {e}")
+        return {"status": "failed", "error": str(e), "text": "", "malayalam_text": "", "segments": []}
 
 def transcribe_audio_stream(audio_input, style: str = "standard", source_lang: str = "ml"):
-    audio = _load_audio(audio_input)
-    common = {**_BASE_COMMON, "language": source_lang}
+    try:
+        wav_bytes = _to_wav_bytes(audio_input)
+        print(f"[ASR] stream lang={source_lang} bytes={len(wav_bytes)}")
 
-    en_segs, en_info = model.transcribe(
-        audio,
-        task="translate",
-        initial_prompt=_style_prompt(style),
-        **common,
-    )
-    en_parts = []
-    for seg in en_segs:
-        t = seg.text.strip()
-        if t and not _is_prompt_echo(t, style):
-            en_parts.append(t)
-            yield {
-                "type": "english_segment",
-                "text": t,
-                "accumulated": cleanup_text(" ".join(en_parts)),
-            }
-    full_english = cleanup_text(" ".join(en_parts))
-    if _is_prompt_echo(full_english, style):
-        full_english = ""
+        english_text = _groq_translate(wav_bytes, source_lang)
+        print(f"[ASR] English  : {english_text}")
 
-    ml_segs, _ = model.transcribe(
-        audio,
-        task="transcribe",
-        **common,
-    )
-    ml_parts = []
-    for seg in ml_segs:
-        t = seg.text.strip()
-        if t and not _is_hallucination(t):
-            ml_parts.append(t)
-            yield {
-                "type": "malayalam_segment",
-                "text": t,
-                "accumulated": cleanup_text(" ".join(ml_parts)),
-            }
-    full_native = cleanup_text(" ".join(ml_parts))
-    if _is_hallucination(full_native):
-        full_native = ""
+        if english_text:
+            yield {"type": "english_segment", "text": english_text, "accumulated": english_text}
 
-    yield {
-        "type": "complete",
-        "english_text": full_english,
-        "malayalam_text": full_native,
-        "language": en_info.language,
-    }
+        native_text = _groq_transcribe(wav_bytes, source_lang)
+        if _is_hallucination(native_text):
+            native_text = ""
+        print(f"[ASR] Native   : {native_text}")
+
+        if native_text:
+            yield {"type": "malayalam_segment", "text": native_text, "accumulated": native_text}
+
+        yield {
+            "type": "complete",
+            "english_text": english_text,
+            "malayalam_text": native_text,
+            "language": source_lang,
+            "source_lang": source_lang,
+        }
+    except Exception as e:
+        print(f"[ASR] Stream Error: {e}")
+        yield {"type": "error", "error": str(e)}
