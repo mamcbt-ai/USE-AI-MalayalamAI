@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-const API_URL = "";
+const API_URL = "/api";
 
 const PLANS = [
   { id: "basic",     name: "Basic",     price: 99,  badge: "",             recordings: "30 recordings/day",    description: "Great for regular use",   color: "#4CAF50" },
@@ -95,5 +95,6 @@ export default function PricingPage() {
     </div>
   );
 }
+
 
 

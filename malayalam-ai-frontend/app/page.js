@@ -1,6 +1,6 @@
 ﻿'use client';
 import { useState, useRef } from 'react';
-const API = '';
+const API = '/api';
 const NGROK_HEADER = { 'ngrok-skip-browser-warning': 'true' };
 const STYLES = [
   { key: 'standard',  label: 'Standard' },
@@ -352,5 +352,6 @@ export default function Home() {
     </main>
   );
 }
+
 
 
