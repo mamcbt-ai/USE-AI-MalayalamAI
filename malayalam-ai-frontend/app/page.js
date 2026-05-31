@@ -59,7 +59,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Registration failed');
-      setToken(data.token); setUserEmail(data.email); setScreen('app');
+      setToken(data.token); setUserEmail(data.email); localStorage.setItem('token', data.token); localStorage.setItem('user_email', data.email); setScreen('app');
     } catch (e) { setAuthError(e.message); }
   };
   const handleForgotPassword = async () => {
@@ -88,7 +88,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Login failed');
-      setToken(data.access_token); setUserEmail(data.email); setScreen('app');
+      setToken(data.access_token); setUserEmail(data.email); localStorage.setItem('token', data.access_token); localStorage.setItem('user_email', data.email); setScreen('app');
     } catch (e) { setAuthError(e.message); }
   };
   const startRecording = async () => {
@@ -180,7 +180,7 @@ export default function Home() {
       const res = await fetch(`${API}/payment/create-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ plan: planId })
+        body: JSON.stringify({ plan_id: planId })
       });
       const order = await res.json();
       const options = {
@@ -190,7 +190,7 @@ export default function Home() {
           const verifyRes = await fetch(`${API}/payment/verify`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ razorpay_order_id: response.razorpay_order_id, razorpay_payment_id: response.razorpay_payment_id, razorpay_signature: response.razorpay_signature, plan: planId })
+            body: JSON.stringify({ razorpay_order_id: response.razorpay_order_id, razorpay_payment_id: response.razorpay_payment_id, razorpay_signature: response.razorpay_signature, plan_id: planId })
           });
           const result = await verifyRes.json();
           alert(result.message); setShowPlans(false);
@@ -352,3 +352,4 @@ export default function Home() {
     </main>
   );
 }
+

@@ -19,7 +19,7 @@ export default function PricingPage() {
 
   useEffect(() => {
     const stored = localStorage.getItem("token");
-    if (!stored) { router.push("/login?redirect=pricing"); return; }
+    if (!stored) { router.push("/"); return; }
     setToken(stored);
     fetch(`${API_URL}/payment/my-plan`, { headers: { Authorization: `Bearer ${stored}` } })
       .then(r => r.json()).then(d => setMyPlan(d.plan)).catch(() => {});
@@ -31,7 +31,7 @@ export default function PricingPage() {
   }, []);
 
   const handleBuyNow = async (plan) => {
-    if (!token) { router.push("/login?redirect=pricing"); return; }
+    if (!token) { router.push("/"); return; }
     setLoading(plan.id); setMessage("");
     try {
       const res = await fetch(`${API_URL}/payment/create-order`, {
@@ -95,3 +95,4 @@ export default function PricingPage() {
     </div>
   );
 }
+
