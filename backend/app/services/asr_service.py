@@ -1,68 +1,42 @@
-import os
-import re
-import numpy as np
-import tempfile
+import os, re, numpy as np, tempfile, requests
 import soundfile as sf
 from groq import Groq
 
 groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
-WHISPER_MODEL = 'whisper-large-v3'
+SARVAM_KEY = os.environ.get('SARVAM_API_KEY', '')
 LLM_MODEL = 'llama-3.3-70b-versatile'
-DEVICE = 'groq-api'
+DEVICE = 'sarvam+groq'
+print(f'ASR ready: Sarvam AI (Indian STT) + {LLM_MODEL}')
 
-print(f'ASR ready: {WHISPER_MODEL} + {LLM_MODEL} via Groq API')
-
+LANG_CODES = {'ml':'ml-IN','ta':'ta-IN','te':'te-IN','kn':'kn-IN','hi':'hi-IN'}
 LANG_NAMES = {'ml':'Malayalam','ta':'Tamil','te':'Telugu','kn':'Kannada','hi':'Hindi'}
 
-TRANSLATE_PROMPTS = {
-    'ml': 'You are an expert Malayalam-English translator. Translate the Malayalam text to natural English. Output ONLY English.',
-    'ta': 'You are an expert Tamil-English translator. Translate the Tamil text to natural English. Output ONLY English.',
-    'te': 'You are an expert Telugu-English translator. Translate the Telugu text to natural English. Output ONLY English.',
-    'kn': 'You are an expert Kannada-English translator. Translate the Kannada text to natural English. Output ONLY English.',
-    'hi': 'You are an expert Hindi-English translator. Translate the Hindi text to natural English. Output ONLY English.',
-}
-
 UNICODE_PROMPTS = {
-    'ml': 'You are a Malayalam expert. Write this text in natural Malayalam Unicode script (like: നമസ്കാരം). Output ONLY Malayalam characters, no English.',
-    'ta': 'You are a Tamil expert. Write this text in natural Tamil Unicode script (like: வணக்கம்). Output ONLY Tamil characters, no English.',
-    'te': 'You are a Telugu expert. Write this text in natural Telugu Unicode script (like: నమస్కారం). Output ONLY Telugu characters, no English.',
-    'kn': 'You are a Kannada expert. Write this text in natural Kannada Unicode script (like: ನಮಸ್ಕಾರ). Output ONLY Kannada characters, no English.',
-    'hi': 'You are a Hindi expert. Write this text in natural Hindi Devanagari script (like: नमस्ते). Output ONLY Hindi characters, no English.',
+    'ml': 'You are a Malayalam expert. The following is transliterated or informal Malayalam text. Rewrite it in natural, fluent Malayalam Unicode script. Output ONLY Malayalam characters. No English, no explanation.',
+    'ta': 'You are a Tamil expert. Rewrite the following in natural Tamil Unicode script. Output ONLY Tamil characters.',
+    'te': 'You are a Telugu expert. Rewrite the following in natural Telugu Unicode script. Output ONLY Telugu characters.',
+    'kn': 'You are a Kannada expert. Rewrite the following in natural Kannada Unicode script. Output ONLY Kannada characters.',
+    'hi': 'You are a Hindi expert. Rewrite the following in natural Hindi Devanagari script. Output ONLY Hindi characters.',
 }
 
-HALLUCINATIONS = [
-    'thank you for watching','thanks for watching','subscribe','music','[music]',
-    'subtitles','captions','hello and welcome','welcome to my channel',
-    'translated by','english is a language','language of the language',
-    "i'm here with a story",'hello everyone','story about a little',
-]
+TRANSLATE_PROMPTS = {
+    'ml': 'Translate this Malayalam text to natural English. Output ONLY the English translation.',
+    'ta': 'Translate this Tamil text to natural English. Output ONLY the English translation.',
+    'te': 'Translate this Telugu text to natural English. Output ONLY the English translation.',
+    'kn': 'Translate this Kannada text to natural English. Output ONLY the English translation.',
+    'hi': 'Translate this Hindi text to natural English. Output ONLY the English translation.',
+}
 
 def cleanup_text(text):
     if not text: return ''
-    text = re.sub(r'\s+', ' ', text.strip())
-    return text.strip()
-
-def _is_hallucination(text):
-    if not text or len(text) < 3: return False
-    from collections import Counter
-    counts = Counter(text.replace(' ', ''))
-    if counts:
-        ratio = counts.most_common(1)[0][1] / max(len(text.replace(' ', '')), 1)
-        if ratio > 0.6: return True
-    lower = text.lower()
-    if any(lower.startswith(p) or (p in lower and len(text) < 80) for p in HALLUCINATIONS): return True
-    words = text.split()
-    if len(words) >= 4 and len(set(w.lower() for w in words)) / len(words) < 0.5: return True
-    return False
+    return re.sub(r'\s+', ' ', text.strip()).strip()
 
 def _to_wav_bytes(audio):
     if not isinstance(audio, np.ndarray):
         audio, _ = sf.read(audio, dtype='float32')
         if len(audio.shape) > 1: audio = audio.mean(axis=1)
-    # Normalize to prevent clipping (max=1.0)
     peak = np.max(np.abs(audio))
-    if peak > 0.95:
-        audio = audio * (0.95 / peak)
+    if peak > 0.95: audio = audio * (0.95 / peak)
     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
         sf.write(tmp.name, audio, 16000)
         p = tmp.name
@@ -75,15 +49,24 @@ def _load_audio(x):
     a, _ = sf.read(x, dtype='float32')
     return a.mean(axis=1) if len(a.shape) > 1 else a
 
-def _whisper_transcribe(wav_bytes, lang):
+def _sarvam_transcribe(wav_bytes, lang):
+    lang_code = LANG_CODES.get(lang, 'ml-IN')
     try:
-        r = groq_client.audio.transcriptions.create(
-            file=('audio.wav', wav_bytes), model=WHISPER_MODEL,
-            language=lang, response_format='text')
-        t = r.text if hasattr(r,'text') else str(r)
-        return cleanup_text(t)
+        resp = requests.post(
+            'https://api.sarvam.ai/speech-to-text',
+            headers={'api-subscription-key': SARVAM_KEY},
+            files={'file': ('audio.wav', wav_bytes, 'audio/wav')},
+            data={'language_code': lang_code, 'model': 'saaras:v2'},
+            timeout=30)
+        if resp.status_code == 200:
+            result = resp.json().get('transcript', '')
+            print(f'[ASR] Sarvam ({lang}): {result[:80]}')
+            return cleanup_text(result)
+        else:
+            print(f'[ASR] Sarvam error {resp.status_code}: {resp.text[:100]}')
+            return ''
     except Exception as e:
-        print(f'[ASR] transcribe error: {e}')
+        print(f'[ASR] Sarvam exception: {e}')
         return ''
 
 def _llm_call(system_prompt, user_text):
@@ -108,21 +91,19 @@ def _to_unicode(native_text, lang):
     ascii_ratio = sum(1 for c in native_text if ord(c)<128)/max(len(native_text),1)
     if ascii_ratio < 0.3: return native_text
     result = _llm_call(UNICODE_PROMPTS.get(lang, UNICODE_PROMPTS['ml']), native_text)
-    print(f'[ASR] Unicode fix: {result[:80]}')
+    print(f'[ASR] Unicode: {result[:80]}')
     return result
 
 def transcribe_audio(audio_input, style='standard', source_lang='ml'):
     try:
         wav = _to_wav_bytes(_load_audio(audio_input))
         print(f'[ASR] lang={source_lang} bytes={len(wav)}')
-        native = _whisper_transcribe(wav, source_lang)
-        print(f'[ASR] Whisper: {native[:80]}')
-        if _is_hallucination(native): native = ''
-        english = _to_english(native, source_lang)
-        native_unicode = _to_unicode(native, source_lang)
+        native = _sarvam_transcribe(wav, source_lang)
+        english = _to_english(native, source_lang) if native else ''
+        native_unicode = _to_unicode(native, source_lang) if native else ''
         print(f'[ASR] Native : {native_unicode[:80]}')
         return {'status':'success','text':english,'malayalam_text':native_unicode,
-                'raw_text':english,'language':source_lang,'segments':[],'device':DEVICE,'model':WHISPER_MODEL}
+                'raw_text':english,'language':source_lang,'segments':[],'device':DEVICE,'model':'saaras:v2'}
     except Exception as e:
         print(f'[ASR] Error: {e}')
         return {'status':'failed','error':str(e),'text':'','malayalam_text':'','segments':[]}
@@ -131,13 +112,10 @@ def transcribe_audio_stream(audio_input, style='standard', source_lang='ml'):
     try:
         wav = _to_wav_bytes(_load_audio(audio_input))
         print(f'[ASR] stream lang={source_lang} bytes={len(wav)}')
-        native = _whisper_transcribe(wav, source_lang)
-        if _is_hallucination(native): native = ''
-        print(f'[ASR] Whisper: {native[:80]}')
-        english = _to_english(native, source_lang)
+        native = _sarvam_transcribe(wav, source_lang)
+        english = _to_english(native, source_lang) if native else ''
         if english: yield {'type':'english_segment','text':english,'accumulated':english}
-        native_unicode = _to_unicode(native, source_lang)
-        print(f'[ASR] Native : {native_unicode[:80]}')
+        native_unicode = _to_unicode(native, source_lang) if native else ''
         if native_unicode: yield {'type':'malayalam_segment','text':native_unicode,'accumulated':native_unicode}
         yield {'type':'complete','english_text':english,'malayalam_text':native_unicode,'language':source_lang,'source_lang':source_lang}
     except Exception as e:
