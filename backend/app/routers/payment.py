@@ -43,14 +43,14 @@ PLANS = {
 # CREATE ORDER
 # ========================
 class CreateOrderRequest(BaseModel):
-    plan: str
+    plan_id: str
 
 @router.post("/create-order")
 def create_order(data: CreateOrderRequest, current_user=Depends(get_current_user)):
-    if data.plan not in PLANS:
+    if data.plan_id not in PLANS:
         raise HTTPException(status_code=400, detail="Invalid plan")
-    plan = PLANS[data.plan]
-    order = client.order.create({
+    plan = PLANS[data.plan_id]
+    order = rzp_client.order.create({
         "amount": plan["amount"],
         "currency": "INR",
         "payment_capture": 1
@@ -59,7 +59,7 @@ def create_order(data: CreateOrderRequest, current_user=Depends(get_current_user
         "order_id": order["id"],
         "amount": plan["amount"],
         "currency": "INR",
-        "plan": data.plan,
+        "plan": data.plan_id,
         "key_id": os.environ.get("RAZORPAY_KEY_ID", "")
     }
 
@@ -70,7 +70,7 @@ class VerifyPaymentRequest(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
-    plan: str
+    plan_id: str
 
 @router.post("/verify")
 def verify_payment(data: VerifyPaymentRequest, current_user=Depends(get_current_user)):
@@ -85,13 +85,13 @@ def verify_payment(data: VerifyPaymentRequest, current_user=Depends(get_current_
         raise HTTPException(status_code=400, detail="Payment verification failed")
 
     # Step 2: Upgrade user plan
-    if data.plan not in PLANS:
+    if data.plan_id not in PLANS:
         raise HTTPException(status_code=400, detail="Invalid plan")
-    plan = PLANS[data.plan]
+    plan = PLANS[data.plan_id]
 
     with Session(engine) as session:
         user = get_user_by_email(session, current_user.email)
-        user.plan = data.plan
+        user.plan = data.plan_id
         user.plan_expires_at = datetime.utcnow() + timedelta(days=plan["days"])
         user.daily_limit = plan["daily_limit"]
         session.add(user)
@@ -99,7 +99,7 @@ def verify_payment(data: VerifyPaymentRequest, current_user=Depends(get_current_
 
     return {
         "message": f"Payment successful! You are now on {plan['name']}.",
-        "plan": data.plan,
+        "plan": data.plan_id,
         "daily_limit": plan["daily_limit"]
     }
 
@@ -126,4 +126,5 @@ def get_my_plan(current_user=Depends(get_current_user)):
         "daily_limit": current_user.daily_limit,
         "expires_at": current_user.plan_expires_at
     }
+
 
