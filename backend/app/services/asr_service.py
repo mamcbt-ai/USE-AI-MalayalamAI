@@ -3,7 +3,14 @@ from typing import Dict, Generator, List, Optional, Tuple, Union
 import numpy as np, requests, soundfile as sf
 from groq import Groq
 
-groq_client       = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+_groq_client = None
+def _get_groq():
+    global _groq_client
+    if _groq_client is None:
+        key = os.environ.get("GROQ_API_KEY", "")
+        if not key: return None
+        _groq_client = Groq(api_key=key)
+    return _groq_client
 SARVAM_KEY        = os.environ.get("SARVAM_API_KEY", "")
 TARGET_SR         = 16000
 MAX_SECONDS       = 25
@@ -144,7 +151,7 @@ def _sarvam_call(wav_bytes: bytes, lang: str, mode: str) -> str:
 
 def _groq_fallback(wav_bytes: bytes, lang: str) -> str:
     try:
-        result = groq_client.audio.transcriptions.create(
+        result = _get_groq().audio.transcriptions.create(
             file=("audio.wav", wav_bytes), model=GROQ_MODEL, language=lang,
             response_format="text",
             prompt=f"This is {LANG_NAMES.get(lang,lang)} speech. Return accurate transcript in original language/script. Preserve slang, names, numbers.",
@@ -194,7 +201,7 @@ def _translate_to_english(native_text: str, lang: str) -> str:
         "Do not summarize. Output only English."
     )
     try:
-        r = groq_client.chat.completions.create(
+        r = _get_groq().chat.completions.create(
             model=TRANSLATION_MODEL,
             messages=[{"role":"system","content":system},{"role":"user","content":native_text}],
             max_tokens=512, temperature=0.0,
@@ -255,3 +262,4 @@ def transcribe_audio_stream(audio_input, style="standard", source_lang="ml") -> 
         "language":     result.get("language",source_lang),
         "unicode_label":result.get("unicode_label","NATIVE UNICODE"),
     }
+
