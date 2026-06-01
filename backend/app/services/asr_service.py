@@ -1,40 +1,55 @@
 ﻿import os, re, tempfile
-import numpy as np, soundfile as sf
+from typing import Dict, Generator, Optional, Tuple, Union
+import numpy as np, requests, soundfile as sf
 from groq import Groq
 
-groq_client    = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-WHISPER_MODEL  = "whisper-large-v3"
-LLM_MODEL      = "llama-3.3-70b-versatile"
-DEVICE         = "groq-whisper+llm"
+try:
+    import librosa
+except ImportError:
+    librosa = None
 
-LANG_CODES = {"ml":"ml","ta":"ta","te":"te","kn":"kn","hi":"hi"}
-LANG_NAMES = {"ml":"Malayalam","ta":"Tamil","te":"Telugu","kn":"Kannada","hi":"Hindi"}
+groq_client      = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+SARVAM_KEY       = os.environ.get("SARVAM_API_KEY", "")
+TARGET_SR        = 16000
+MAX_SECONDS      = 25
+TRANSLATION_MODEL = "llama-3.3-70b-versatile"
+DEVICE           = "sarvam:saaras:v3"
 
-HALLUCINATIONS = [
-    "thank you for watching","thanks for watching","subscribe",
-    "hello and welcome","welcome to my channel","translated by",
-    "translation by","music","applause","subtitles","captions",
+LANG_CODES  = {"ml":"ml-IN","ta":"ta-IN","te":"te-IN","kn":"kn-IN","hi":"hi-IN"}
+LANG_NAMES  = {"ml":"Malayalam","ta":"Tamil","te":"Telugu","kn":"Kannada","hi":"Hindi"}
+UNICODE_LABELS = {"ml":"MALAYALAM UNICODE","ta":"TAMIL UNICODE","te":"TELUGU UNICODE","kn":"KANNADA UNICODE","hi":"HINDI UNICODE"}
+
+BAD_PHRASES = [
+    "thank you for watching","thanks for watching","subscribe","like and share",
+    "hello and welcome","welcome to my channel","translated by","subtitles by",
+    "music plays","[music]","[applause]","romantic music",
+    "new episode of the video game","my all dear people","story about a little boy",
 ]
 
-print(f"ASR ready: {WHISPER_MODEL} + {LLM_MODEL}")
+print(f"ASR ready: {DEVICE} + {TRANSLATION_MODEL}")
 
 def cleanup_text(text: str) -> str:
     if not text: return ""
-    text = re.sub(r"\s+", " ", text).strip()
-    text = re.sub(r"([.!?])\1+", r"\1", text)
-    return text
+    text = re.sub(r"\s+", " ", text.strip())
+    text = re.sub(r"\s+([,.;!?])", r"\1", text)
+    return text.strip()
 
-def is_hallucination(text: str) -> bool:
-    if not text or len(text.strip()) < 3: return True
-    lower = text.lower().strip()
-    if any(p in lower for p in HALLUCINATIONS): return True
-    words = re.findall(r"\w+", lower, flags=re.UNICODE)
-    if len(words) >= 6 and len(set(words)) / max(len(words),1) < 0.45: return True
-    if len(lower) <= 12 and lower in {"hello","welcome","thanks","thank you"}: return True
+def _looks_like_hallucination(text: str) -> bool:
+    if not text or len(text.strip()) < 2: return True
+    lower = text.lower()
+    if any(p in lower for p in BAD_PHRASES): return True
+    words = re.findall(r"\w+", lower)
+    if len(words) >= 8 and len(set(words)) / max(len(words),1) < 0.38: return True
     return False
 
-def _load_audio(audio_input):
+def _native_script_ratio(text: str) -> float:
+    letters = [c for c in text if c.isalpha()]
+    if not letters: return 0.0
+    return sum(1 for c in letters if ord(c) > 127) / len(letters)
+
+def _load_audio(audio_input) -> Tuple[np.ndarray, int]:
     if isinstance(audio_input, (bytes, bytearray)):
+        # Decode WebM/Opus via PyAV
         import tempfile as tf2
         with tf2.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
             tmp.write(audio_input); p = tmp.name
@@ -52,126 +67,141 @@ def _load_audio(audio_input):
             print(f"[ASR] decode error: {e}"); audio = np.zeros(1, dtype=np.float32)
         finally:
             os.unlink(p)
-        sr = 16000
+        return audio.astype("float32"), TARGET_SR
     elif isinstance(audio_input, np.ndarray):
-        audio, sr = audio_input.astype("float32"), 16000
+        return audio_input.astype("float32"), TARGET_SR
     else:
         audio, sr = sf.read(audio_input, dtype="float32")
-    if audio.ndim > 1: audio = audio.mean(axis=1)
-    if sr != 16000 and len(audio):
-        dur = len(audio) / sr
-        audio = np.interp(
-            np.linspace(0, dur, int(dur*16000), endpoint=False),
-            np.linspace(0, dur, len(audio), endpoint=False), audio
-        ).astype("float32")
-    peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
-    if peak > 0.98: audio = audio * (0.98 / peak)
-    return audio
+        if audio.ndim > 1: audio = audio.mean(axis=1)
+        if sr != TARGET_SR:
+            if librosa is None:
+                # Simple resampling without librosa
+                dur = len(audio) / sr
+                audio = np.interp(
+                    np.linspace(0, dur, int(dur*TARGET_SR), endpoint=False),
+                    np.linspace(0, dur, len(audio), endpoint=False), audio
+                ).astype("float32")
+            else:
+                audio = librosa.resample(audio, orig_sr=sr, target_sr=TARGET_SR)
+        return audio.astype("float32"), TARGET_SR
 
-def _to_wav_bytes(audio_input) -> bytes:
-    audio = _load_audio(audio_input)[:25*16000]
+def _prepare_wav_bytes(audio_input) -> bytes:
+    audio, sr = _load_audio(audio_input)
+    audio = audio[:MAX_SECONDS * TARGET_SR]
+    if len(audio) == 0: raise RuntimeError("Empty audio after decoding")
+    # Validate
+    if len(audio) < int(0.7 * TARGET_SR): raise RuntimeError("Audio too short. Please speak for at least 1 second.")
+    rms = float(np.sqrt(np.mean(np.square(audio))))
+    if rms < 0.005: raise RuntimeError("Audio too quiet. Please speak louder or hold phone closer.")
+    # Normalize
+    peak = float(np.max(np.abs(audio)))
+    if peak > 0: audio = audio / peak * 0.95
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        sf.write(tmp.name, audio, 16000); p = tmp.name
+        sf.write(tmp.name, audio, TARGET_SR); p = tmp.name
     try:
         with open(p,"rb") as f: return f.read()
     finally:
         os.unlink(p)
 
-def _llm_call(system: str, user_text: str) -> str:
-    if not user_text: return ""
+def _sarvam(wav_bytes: bytes, lang: str, mode: str) -> str:
+    if not SARVAM_KEY: return ""
+    lang_code = LANG_CODES.get(lang, "ml-IN")
     try:
-        r = groq_client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[{"role":"system","content":system},{"role":"user","content":user_text}],
-            temperature=0.0, max_tokens=512,
+        resp = requests.post(
+            "https://api.sarvam.ai/speech-to-text",
+            headers={"api-subscription-key": SARVAM_KEY},
+            files={"file": ("audio.wav", wav_bytes, "audio/wav")},
+            data={"language_code": lang_code, "model": "saaras:v3", "mode": mode},
+            timeout=30,
         )
-        return cleanup_text(r.choices[0].message.content.strip())
-    except Exception as e:
-        print(f"[ASR] LLM error: {e}"); return ""
-
-def _transcribe_native(wav_bytes: bytes, lang: str) -> str:
-    try:
-        result = groq_client.audio.transcriptions.create(
-            file=("audio.wav", wav_bytes), model=WHISPER_MODEL,
-            language=LANG_CODES.get(lang, "ml"), response_format="text",
-        )
-        text = result if isinstance(result, str) else getattr(result, "text", str(result))
-        text = cleanup_text(text)
-        if is_hallucination(text): return ""
+        if resp.status_code != 200:
+            print(f"[ASR] Sarvam {mode} {resp.status_code}: {resp.text[:120]}")
+            return ""
+        text = cleanup_text(resp.json().get("transcript", ""))
+        print(f"[ASR] Sarvam {mode}: {text[:160]}")
+        if _looks_like_hallucination(text): return ""
         return text
     except Exception as e:
-        print(f"[ASR] transcription error: {e}"); return ""
+        print(f"[ASR] Sarvam {mode} error: {e}"); return ""
 
-def _refine_native_text(native_text: str, lang: str) -> str:
-    if not native_text: return ""
-    lang_name = LANG_NAMES.get(lang, lang)
-    system = (
-        f"You are an expert editor for {lang_name}. "
-        f"Clean this ASR transcript in {lang_name} script. "
-        "Fix obvious ASR mistakes, punctuation, spacing, and malformed words. "
-        "Preserve slang, colloquial meaning, names, places, and numbers. "
-        "Do NOT translate. Output ONLY the corrected text in the same language/script."
-    )
-    return _llm_call(system, native_text) or native_text
+def _pick_best(primary: str, codemix: str) -> str:
+    candidates = [(t, _native_script_ratio(t) + min(len(t),120)/120) for t in [primary, codemix] if t]
+    if not candidates: return ""
+    best = max(candidates, key=lambda x: x[1])[0]
+    print(f"[ASR] Best native: {best[:160]}")
+    return best
 
-def _translate_to_english(native_text: str, lang: str) -> str:
+def _translate(native_text: str, lang: str) -> str:
     if not native_text: return ""
     lang_name = LANG_NAMES.get(lang, lang)
     system = (
         f"You are an expert {lang_name}-to-English translator. "
-        f"Translate the user's {lang_name} text into natural English. "
-        "Preserve names, places, slang meaning, tone, and numbers. "
-        "Do not summarize. Output only English."
+        "Translate exactly what is written. Preserve names, slang, places, brands, and numbers. "
+        "Do not summarize. Do not explain. Output only natural English."
     )
-    return _llm_call(system, native_text)
+    try:
+        r = groq_client.chat.completions.create(
+            model=TRANSLATION_MODEL,
+            messages=[{"role":"system","content":system},{"role":"user","content":native_text}],
+            max_tokens=512, temperature=0.0,
+        )
+        result = cleanup_text(r.choices[0].message.content.strip())
+        print(f"[ASR] English: {result[:160]}")
+        return result if not _looks_like_hallucination(result) else ""
+    except Exception as e:
+        print(f"[ASR] Translation error: {e}"); return ""
 
-def _make_result(raw_native: str, native_text: str, english_text: str, source_lang: str) -> dict:
+def _ok(native: str, english: str, lang: str) -> Dict:
     return {
-        "status":          "success",
-        "english_text":    english_text,
-        "text":            english_text,          # backward compat
-        "native_text":     native_text,           # single source of truth
-        "display_text":    native_text,           # backward compat
-        "raw_native_text": raw_native,
-        "language":        source_lang,
-        "language_name":   LANG_NAMES.get(source_lang, source_lang),
-        "segments":        [],
-        "device":          DEVICE,
-        "model":           WHISPER_MODEL,
+        "status": "success",
+        "text": english, "english_text": english,
+        "native_text": native, "malayalam_text": native, "raw_text": native,
+        "language": lang,
+        "native_language_name": LANG_NAMES.get(lang, lang),
+        "unicode_label": UNICODE_LABELS.get(lang, "NATIVE UNICODE"),
+        "segments": [], "device": DEVICE, "model": "saaras:v3",
     }
 
-def transcribe_audio(audio_input, style="standard", source_lang="ml"):
-    try:
-        wav        = _to_wav_bytes(audio_input)
-        print(f"[ASR] lang={source_lang} bytes={len(wav)}")
-        native_raw = _transcribe_native(wav, source_lang)
-        print(f"[ASR] raw     = {native_raw[:120]}")
-        native     = _refine_native_text(native_raw, source_lang)
-        print(f"[ASR] refined = {native[:120]}")
-        english    = _translate_to_english(native or native_raw, source_lang)
-        print(f"[ASR] english = {english[:120]}")
-        return _make_result(native_raw, native, english, source_lang)
-    except Exception as e:
-        print(f"[ASR] error: {e}")
-        return {"status":"failed","error":str(e),"text":"","english_text":"","native_text":"","display_text":"","segments":[]}
+def _fail(msg: str, lang: str) -> Dict:
+    return {
+        "status": "failed", "error": msg,
+        "text": "", "english_text": "", "native_text": "", "malayalam_text": "",
+        "language": lang,
+        "native_language_name": LANG_NAMES.get(lang, lang),
+        "unicode_label": UNICODE_LABELS.get(lang, "NATIVE UNICODE"),
+        "segments": [],
+    }
 
-def transcribe_audio_stream(audio_input, style="standard", source_lang="ml"):
+def transcribe_audio(audio_input, style="standard", source_lang="ml") -> Dict:
     try:
-        wav        = _to_wav_bytes(audio_input)
-        print(f"[ASR] stream lang={source_lang} bytes={len(wav)}")
-        native_raw = _transcribe_native(wav, source_lang)
-        native     = _refine_native_text(native_raw, source_lang)
-        english    = _translate_to_english(native or native_raw, source_lang)
-        if english: yield {"type":"english_segment","text":english,"accumulated":english}
-        if native:  yield {"type":"native_segment", "text":native, "accumulated":native}
-        yield {
-            "type":          "complete",
-            "english_text":  english,
-            "native_text":   native,
-            "display_text":  native,
-            "language":      source_lang,
-            "source_lang":   source_lang,
-        }
+        wav = _prepare_wav_bytes(audio_input)
+        print(f"[ASR] lang={source_lang} bytes={len(wav)}")
+        native_t  = _sarvam(wav, source_lang, "transcribe")
+        native_cm = _sarvam(wav, source_lang, "codemix")
+        native    = _pick_best(native_t, native_cm)
+        if not native:
+            return _fail("No clear speech recognized. Please speak 2-8 seconds in the selected language.", source_lang)
+        english = _translate(native, source_lang)
+        return _ok(native, english, source_lang)
     except Exception as e:
-        print(f"[ASR] stream error: {e}")
-        yield {"type":"error","error":str(e)}
+        print(f"[ASR] Error: {e}")
+        return _fail(str(e), source_lang)
+
+def transcribe_audio_stream(audio_input, style="standard", source_lang="ml") -> Generator[Dict, None, None]:
+    result = transcribe_audio(audio_input, style=style, source_lang=source_lang)
+    if result["status"] != "success":
+        yield {"type":"error","error":result.get("error","Transcription failed")}
+        return
+    if result.get("english_text"):
+        yield {"type":"english_segment","text":result["english_text"],"accumulated":result["english_text"]}
+    if result.get("native_text"):
+        yield {"type":"native_segment","text":result["native_text"],"accumulated":result["native_text"]}
+        yield {"type":"malayalam_segment","text":result["native_text"],"accumulated":result["native_text"]}
+    yield {
+        "type":"complete",
+        "english_text":  result.get("english_text",""),
+        "native_text":   result.get("native_text",""),
+        "malayalam_text":result.get("native_text",""),
+        "language":      result.get("language",source_lang),
+        "unicode_label": result.get("unicode_label","NATIVE UNICODE"),
+    }

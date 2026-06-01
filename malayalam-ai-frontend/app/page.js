@@ -30,6 +30,14 @@ const LANGUAGES = [
   { key: 'kn', label: 'Kannada' },
   { key: 'hi', label: 'Hindi' },
 ];
+const languageMeta = {
+  ml: { name: "Malayalam", unicodeLabel: "MALAYALAM UNICODE" },
+  ta: { name: "Tamil",     unicodeLabel: "TAMIL UNICODE" },
+  te: { name: "Telugu",    unicodeLabel: "TELUGU UNICODE" },
+  kn: { name: "Kannada",   unicodeLabel: "KANNADA UNICODE" },
+  hi: { name: "Hindi",     unicodeLabel: "HINDI UNICODE" },
+};
+
 export default function Home() {
   const [screen, setScreen] = useState('login');
   const [email, setEmail] = useState('');
@@ -126,36 +134,37 @@ export default function Home() {
   };
   const sendAudioStream = async (blob) => {
     try {
+      setError(""); setLoading(true); setIsDone(false);
+      setStreamStatus("Processing your speech...");
+      setEnglishLive(""); setMalayalamLive(""); setRefinedText("");
       const formData = new FormData();
-      formData.append('file', blob, 'recording.webm');
-      formData.append('style', selectedStyle);
-      formData.append('lang', selectedLang);
-      const res = await fetch('/api/proxy/audio/process', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, ...NGROK_HEADER },
+      formData.append("file", blob, "recording.webm");
+      formData.append("style", selectedStyle);
+      formData.append("lang", selectedLang);
+      const res = await fetch("/api/proxy/audio/process", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(errData.detail || 'Server error');
-      }
-      setStreamStatus('Processing...');
-      const data = await res.json();
-      setLoading(false);
-      const eng    = data.english_text || data.text || '';
-      const native = data.native_text || data.display_text || data.malayalam_text || '';
-      const refined= data.refined_text || eng;
-      if (!eng && !native) {
-        setError('No speech detected. Please speak clearly and try again.');
-      } else {
-        setEnglishLive(eng);
-        setMalayalamLive(native);
-        setRefinedText(refined);
-      }
-      setStreamStatus('');
-      setIsDone(true);
-    } catch (err) { setError('Failed: ' + err.message); }
-    finally { setLoading(false); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.detail || data?.error || "Server error");
+      if (data?.status === "failed") throw new Error(data?.error || "Transcription failed");
+      const nativeText = data?.native_text || data?.malayalam_text
+                      || data?.asr_output?.native_text || data?.asr_output?.malayalam_text || "";
+      const englishText = data?.english_text || data?.text
+                       || data?.asr_output?.english_text || data?.asr_output?.text || "";
+      const refined = data?.refined_text || englishText || nativeText;
+      if (!nativeText && !englishText)
+        throw new Error("No clear speech recognized. Please speak 2-8 seconds in the selected language.");
+      setEnglishLive(englishText || "");
+      setMalayalamLive(nativeText || "");
+      setRefinedText(refined || "");
+      setStreamStatus(""); setIsDone(true);
+    } catch (err) {
+      setError(err?.message || "Failed to process audio");
+      setStreamStatus("");
+    } finally { setLoading(false); }
+  
   };
   const loadPlans = async () => {
     try {
