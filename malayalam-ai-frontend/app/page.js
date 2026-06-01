@@ -15,6 +15,14 @@ const STYLES = [
   { key: 'emotional', label: 'Emotional' },
   { key: 'bullet',    label: 'Bullet Points' },
 ];
+const NATIVE_LABELS = {
+  ml: "MALAYALAM UNICODE",
+  ta: "TAMIL UNICODE",
+  te: "TELUGU UNICODE",
+  kn: "KANNADA UNICODE",
+  hi: "HINDI UNICODE",
+};
+
 const LANGUAGES = [
   { key: 'ml', label: 'Malayalam' },
   { key: 'ta', label: 'Tamil' },
@@ -135,7 +143,7 @@ export default function Home() {
       const data = await res.json();
       setLoading(false);
       const eng    = data.english_text || data.text || '';
-      const native = data.native_text  || data.malayalam_text || '';
+      const native = data.native_text || data.display_text || data.malayalam_text || '';
       const refined= data.refined_text || eng;
       if (!eng && !native) {
         setError('No speech detected. Please speak clearly and try again.');
