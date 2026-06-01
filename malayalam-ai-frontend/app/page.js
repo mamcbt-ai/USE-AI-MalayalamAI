@@ -122,7 +122,7 @@ export default function Home() {
       formData.append('file', blob, 'recording.webm');
       formData.append('style', selectedStyle);
       formData.append('lang', selectedLang);
-      const res = await fetch(`${API}/audio/process`, {
+      const res = await fetch('/api/proxy/audio/process', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, ...NGROK_HEADER },
         body: formData,
@@ -134,14 +134,15 @@ export default function Home() {
       setStreamStatus('Processing...');
       const data = await res.json();
       setLoading(false);
-      const eng = data.english_text || '';
-      const mal = data.malayalam_text || '';
-      if (!eng && !mal) {
+      const eng    = data.english_text || data.text || '';
+      const native = data.native_text  || data.malayalam_text || '';
+      const refined= data.refined_text || eng;
+      if (!eng && !native) {
         setError('No speech detected. Please speak clearly and try again.');
       } else {
         setEnglishLive(eng);
-        setMalayalamLive(mal);
-        setRefinedText(data.refined_text || eng);
+        setMalayalamLive(native);
+        setRefinedText(refined);
       }
       setStreamStatus('');
       setIsDone(true);

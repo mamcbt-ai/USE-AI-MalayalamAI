@@ -1,135 +1,156 @@
-﻿import os, re, numpy as np, tempfile, requests, soundfile as sf
+﻿import os, re, tempfile
+from typing import Dict, Generator, Union
+import numpy as np, requests, soundfile as sf
 from groq import Groq
 
-_groq = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
-_SARVAM_KEY = os.environ.get("SARVAM_API_KEY", "")
-_LLM_MODEL = "llama-3.3-70b-versatile"
-print(f"ASR ready: Sarvam saaras:v3 (direct) + {_LLM_MODEL}")
+groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+SARVAM_KEY  = os.environ.get("SARVAM_API_KEY", "")
+LLM_MODEL   = "llama-3.3-70b-versatile"
+DEVICE      = "sarvam:saaras:v3"
 
-LANGUAGES = {
-    "ml": {"code": "ml-IN", "name": "Malayalam"},
-    "ta": {"code": "ta-IN", "name": "Tamil"},
-    "te": {"code": "te-IN", "name": "Telugu"},
-    "kn": {"code": "kn-IN", "name": "Kannada"},
-    "hi": {"code": "hi-IN", "name": "Hindi"},
-}
+LANG_CODES = {"ml":"ml-IN","ta":"ta-IN","te":"te-IN","kn":"kn-IN","hi":"hi-IN"}
+LANG_NAMES = {"ml":"Malayalam","ta":"Tamil","te":"Telugu","kn":"Kannada","hi":"Hindi"}
 
-_HALLUCINATIONS = [
-    "thank you for watching","thanks for watching","subscribe","like and subscribe",
-    "music plays","[music]","[applause]","subtitles by","www.","http",
-    "hello and welcome to my channel","welcome to my youtube",
-    "this video is sponsored","romantic music","background music",
+HALLUCINATIONS = [
+    "thank you for watching","thanks for watching","subscribe and like",
+    "hello and welcome","music plays","applause","[music]","[applause]",
+    "www.","http","subtitles by","translated by","welcome to my channel",
+    "new episode of the video game","romantic music plays",
 ]
 
-def _translation_prompt(lang):
-    name = LANGUAGES.get(lang, LANGUAGES["ml"])["name"]
-    return (
-        f"You are a professional {name}-to-English translator. "
-        "Translate EXACTLY what is written. Preserve all names, numbers, places. "
-        "Do NOT summarize or add anything. Output ONLY the English translation."
-    )
+UNICODE_ONLY_PROMPTS = {
+    "ml":"You are a Malayalam expert. Convert the following transcript into clean, natural Malayalam Unicode script. Preserve names, places, and numbers exactly. Output ONLY Malayalam Unicode text.",
+    "ta":"You are a Tamil expert. Convert the following transcript into clean, natural Tamil Unicode script. Preserve names, places, and numbers exactly. Output ONLY Tamil Unicode text.",
+    "te":"You are a Telugu expert. Convert the following transcript into clean, natural Telugu Unicode script. Preserve names, places, and numbers exactly. Output ONLY Telugu Unicode text.",
+    "kn":"You are a Kannada expert. Convert the following transcript into clean, natural Kannada Unicode script. Preserve names, places, and numbers exactly. Output ONLY Kannada Unicode text.",
+    "hi":"You are a Hindi expert. Convert the following transcript into clean, natural Hindi Devanagari script. Preserve names, places, and numbers exactly. Output ONLY Hindi Unicode text.",
+}
 
-def _is_bad(text):
-    if not text or len(text.strip()) < 3: return True
-    lower = text.lower()
-    if any(h in lower for h in _HALLUCINATIONS): return True
-    words = text.split()
-    if len(words) >= 6 and len(set(w.lower() for w in words)) / len(words) < 0.4: return True
-    return False
-
-def _dedup(text):
+def cleanup_text(text: str) -> str:
     if not text: return ""
-    parts = re.split(r"(?<=[.!?।])\s+", text.strip())
+    text = re.sub(r"\s+", " ", text.strip())
+    parts = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
     seen, out = set(), []
     for p in parts:
-        key = re.sub(r"\s+", " ", p.strip().lower())[:50]
-        if key and key not in seen:
-            seen.add(key)
-            out.append(p.strip())
-    return " ".join(out)
+        key = p.lower()[:60]
+        if key not in seen:
+            seen.add(key); out.append(p)
+    return " ".join(out).strip()
 
-def _sarvam_transcribe(audio_input, lang):
-    if not _SARVAM_KEY:
-        print("[ASR] SARVAM_API_KEY not set")
-        return ""
-    lang_code = LANGUAGES.get(lang, LANGUAGES["ml"])["code"]
+def _is_hallucination(text: str) -> bool:
+    if not text or len(text.strip()) < 3: return False
+    lower = text.lower().strip()
+    if any(h in lower for h in HALLUCINATIONS): return True
+    words = re.findall(r"\w+", lower)
+    if len(words) >= 6 and len(set(words)) / max(len(words),1) < 0.4: return True
+    return False
 
-    # If raw bytes (WebM/WAV), send directly — best quality
+def _prepare_audio(audio_input) -> tuple:
+    # Returns (bytes, mime_type) — sends raw bytes when possible
     if isinstance(audio_input, (bytes, bytearray)):
-        audio_bytes = audio_input
-        mime = "audio/webm"
-        filename = "audio.webm"
+        return bytes(audio_input), "audio/webm"
+    if isinstance(audio_input, np.ndarray):
+        audio = audio_input.astype("float32")
     else:
-        # numpy array — convert to WAV
-        audio = audio_input if isinstance(audio_input, np.ndarray) else audio_input
-        if not isinstance(audio, np.ndarray):
-            audio, _ = sf.read(audio_input, dtype="float32")
-        if audio.ndim > 1: audio = audio.mean(axis=1)
-        audio = audio[:25*16000]
-        peak = np.max(np.abs(audio))
-        if peak > 0: audio = audio * (0.891 / peak)
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            sf.write(tmp.name, audio, 16000, subtype="PCM_16")
-            p = tmp.name
-        audio_bytes = open(p,"rb").read()
-        os.unlink(p)
-        mime = "audio/wav"
-        filename = "audio.wav"
+        try:
+            audio, sr = sf.read(audio_input, dtype="float32")
+        except Exception:
+            with open(audio_input, "rb") as f:
+                return f.read(), "audio/webm"
+    if len(audio.shape) > 1: audio = audio.mean(axis=1)
+    audio = audio[:25*16000]
+    peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
+    if peak > 0: audio = audio * (0.95 / peak)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        sf.write(tmp.name, audio, 16000)
+        p = tmp.name
+    try:
+        with open(p, "rb") as f: return f.read(), "audio/wav"
+    finally:
+        if os.path.exists(p): os.unlink(p)
 
-    print(f"[ASR] Sarvam ({lang}) {len(audio_bytes)} bytes ({mime})")
+def _sarvam_transcribe(audio_bytes: bytes, mime: str, lang: str) -> str:
+    if not SARVAM_KEY: return ""
+    lang_code = LANG_CODES.get(lang, "ml-IN")
+    filename  = "audio.webm" if "webm" in mime else "audio.wav"
     try:
         resp = requests.post(
             "https://api.sarvam.ai/speech-to-text",
-            headers={"api-subscription-key": _SARVAM_KEY},
+            headers={"api-subscription-key": SARVAM_KEY},
             files={"file": (filename, audio_bytes, mime)},
             data={"language_code": lang_code, "model": "saaras:v3"},
             timeout=30,
         )
         if resp.status_code == 200:
-            t = resp.json().get("transcript", "").strip()
-            print(f"[ASR] Sarvam result: {t[:120]}")
-            if _is_bad(t):
-                print("[ASR] Filtered as hallucination/repetition")
-                return ""
-            return _dedup(t)
+            result = resp.json().get("transcript", "").strip()
+            print(f"[ASR] Sarvam ({lang}): {result[:120]}")
+            if _is_hallucination(result): return ""
+            return cleanup_text(result)
         print(f"[ASR] Sarvam {resp.status_code}: {resp.text[:200]}")
         return ""
     except Exception as e:
-        print(f"[ASR] Sarvam error: {e}")
-        return ""
+        print(f"[ASR] Sarvam error: {e}"); return ""
 
-def _llm_translate(native, lang):
-    if not native: return ""
+def _llm_call(system_prompt: str, user_text: str) -> str:
+    if not user_text: return ""
     try:
-        r = _groq.chat.completions.create(
-            model=_LLM_MODEL,
-            messages=[{"role":"system","content":_translation_prompt(lang)},{"role":"user","content":native}],
-            max_tokens=512, temperature=0.0)
-        result = r.choices[0].message.content.strip()
-        print(f"[ASR] English: {result[:120]}")
-        return result
+        r = groq_client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[{"role":"system","content":system_prompt},{"role":"user","content":user_text}],
+            max_tokens=512, temperature=0.0,
+        )
+        return cleanup_text(r.choices[0].message.content.strip())
     except Exception as e:
-        print(f"[ASR] LLM error: {e}")
-        return ""
+        print(f"[ASR] LLM error: {e}"); return ""
 
-def transcribe_audio(audio_input, style="standard", source_lang="ml"):
+def _normalize_unicode(native_text: str, lang: str) -> str:
+    if not native_text: return ""
+    ascii_ratio = sum(1 for c in native_text if ord(c) < 128) / max(len(native_text), 1)
+    if ascii_ratio < 0.25: return native_text   # Already mostly native Unicode
+    return _llm_call(UNICODE_ONLY_PROMPTS.get(lang, UNICODE_ONLY_PROMPTS["ml"]), native_text) or native_text
+
+def _translate_to_english(native_text: str, lang: str) -> str:
+    if not native_text: return ""
+    lang_name = LANG_NAMES.get(lang, lang)
+    system = (
+        f"You are a professional {lang_name}-to-English translator. "
+        "Translate EXACTLY what is written. Preserve all names, numbers, places, and meaning. "
+        "Do NOT summarize, add, or remove anything. Output ONLY the English translation."
+    )
+    return _llm_call(system, native_text)
+
+def transcribe_audio(audio_input, style: str = "standard", source_lang: str = "ml") -> Dict:
     try:
-        native  = _sarvam_transcribe(audio_input, source_lang)
-        english = _llm_translate(native, source_lang)
-        return {"status":"success","text":english,"malayalam_text":native,"raw_text":native,
-                "language":source_lang,"segments":[],"device":"sarvam+groq","model":"saaras:v3"}
+        audio_bytes, mime = _prepare_audio(audio_input)
+        print(f"[ASR] lang={source_lang} bytes={len(audio_bytes)} mime={mime}")
+        native_raw  = _sarvam_transcribe(audio_bytes, mime, source_lang)
+        native_text = _normalize_unicode(native_raw, source_lang) if native_raw else ""
+        english     = _translate_to_english(native_text or native_raw, source_lang)
+        print(f"[ASR] Native : {native_text[:120]}")
+        print(f"[ASR] English: {english[:120]}")
+        return {
+            "status": "success",
+            "text": english, "english_text": english,
+            "native_text": native_text, "malayalam_text": native_text,
+            "raw_text": native_raw,
+            "language": source_lang,
+            "language_name": LANG_NAMES.get(source_lang, source_lang),
+            "segments": [], "device": DEVICE, "model": "saaras:v3",
+        }
     except Exception as e:
         print(f"[ASR] Error: {e}")
-        return {"status":"failed","error":str(e),"text":"","malayalam_text":"","segments":[]}
+        return {"status":"failed","error":str(e),"text":"","english_text":"","native_text":"","malayalam_text":"","segments":[]}
 
-def transcribe_audio_stream(audio_input, style="standard", source_lang="ml"):
+def transcribe_audio_stream(audio_input, style: str = "standard", source_lang: str = "ml") -> Generator[Dict, None, None]:
     try:
-        native  = _sarvam_transcribe(audio_input, source_lang)
-        english = _llm_translate(native, source_lang)
-        if english: yield {"type":"english_segment","text":english,"accumulated":english}
-        if native:  yield {"type":"malayalam_segment","text":native,"accumulated":native}
-        yield {"type":"complete","english_text":english,"malayalam_text":native,
-               "language":source_lang,"source_lang":source_lang}
+        audio_bytes, mime = _prepare_audio(audio_input)
+        print(f"[ASR] stream lang={source_lang} bytes={len(audio_bytes)} mime={mime}")
+        native_raw  = _sarvam_transcribe(audio_bytes, mime, source_lang)
+        native_text = _normalize_unicode(native_raw, source_lang) if native_raw else ""
+        english     = _translate_to_english(native_text or native_raw, source_lang)
+        if english:     yield {"type":"english_segment",   "text":english,     "accumulated":english}
+        if native_text: yield {"type":"malayalam_segment", "text":native_text, "accumulated":native_text}
+        yield {"type":"complete","english_text":english,"malayalam_text":native_text,"native_text":native_text,"language":source_lang,"source_lang":source_lang}
     except Exception as e:
         print(f"[ASR] Stream Error: {e}")
         yield {"type":"error","error":str(e)}
