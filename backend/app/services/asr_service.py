@@ -66,7 +66,9 @@ def _score_candidate(text: str, lang: str, mode: str, source: str) -> float:
     score  = min(len(words), 18) / 18.0 * 3.0
     score += (1.0 - _repetition_ratio(text)) * 3.0
     score += (1.0 - _max_run_ratio(text)) * 3.0
-    if lang in {"ml","ta","te","kn","hi"}: score += _native_script_ratio(text) * 2.0
+    # codemix output legitimately contains English words, so reduce native-script bonus
+    native_weight = 1.0 if mode == "codemix" else 2.0
+    if lang in {"ml","ta","te","kn","hi"}: score += _native_script_ratio(text) * native_weight
     score += {"verbatim":0.4,"transcribe":0.3,"codemix":0.2}.get(mode, 0.0)
     if source == "groq": score += 0.1
     if _looks_bad(text): score -= 6.0
@@ -161,9 +163,14 @@ def _select_best_native(wav_bytes: bytes, lang: str) -> Tuple[str, str]:
             score = _score_candidate(text, lang, mode, "sarvam")
             candidates.append({"source":"sarvam","mode":mode,"text":text,"score":score})
 
-    # Use Groq as fallback if best Sarvam score < 2.5
-    best_sarvam = max((c["score"] for c in candidates), default=-999)
-    if best_sarvam < 2.5:
+    # Use Groq as fallback if best Sarvam is low-scoring OR obviously bad
+    sarvam_winner = max(candidates, key=lambda x: x["score"]) if candidates else None
+    need_fallback = (
+        sarvam_winner is None or
+        sarvam_winner["score"] < 2.5 or
+        _looks_bad(sarvam_winner["text"])
+    )
+    if need_fallback:
         groq_text = _groq_fallback(wav_bytes, lang)
         if groq_text:
             score = _score_candidate(groq_text, lang, "transcribe", "groq")
