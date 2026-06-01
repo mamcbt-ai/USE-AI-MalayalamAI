@@ -73,10 +73,18 @@ def _score_candidate(text: str, lang: str, mode: str, source: str) -> float:
     score  = min(len(words), 18) / 18.0 * 3.0
     score += (1.0 - _repetition_ratio(text)) * 3.0
     score += (1.0 - _max_run_ratio(text)) * 3.0
-    # codemix output legitimately contains English words, so reduce native-script bonus
-    native_weight = 1.0 if mode == "codemix" else 2.0
-    if lang in {"ml","ta","te","kn","hi"}: score += _native_script_ratio(text) * native_weight
+    # codemix output legitimately contains English words — minimal native-script preference
+    if lang in {"ml","ta","te","kn","hi"}:
+        native_weight = 0.35 if mode == "codemix" else 2.0
+        score += _native_script_ratio(text) * native_weight
     score += {"verbatim":0.4,"transcribe":0.3,"codemix":0.2}.get(mode, 0.0)
+    # For codemix: reward well-structured English-containing output
+    if mode == "codemix":
+        ascii_words = sum(1 for w in _tokenize(text) if all(ord(c) < 128 for c in w))
+        total_words = max(len(_tokenize(text)), 1)
+        english_ratio = ascii_words / total_words
+        if 0.2 <= english_ratio <= 0.9:  # healthy mix
+            score += 0.8
     if source == "groq": score += 0.1
     if _looks_bad(text): score -= 6.0
     return score
@@ -168,7 +176,7 @@ def _groq_fallback(wav_bytes: bytes, lang: str) -> str:
 
 def _select_best_native(wav_bytes: bytes, lang: str) -> Tuple[str, str]:
     candidates = []
-    for mode in ["transcribe", "verbatim", "codemix"]:
+    for mode in ["codemix", "verbatim", "transcribe"]:
         text = _sarvam_call(wav_bytes, lang, mode)
         if text:
             score = _score_candidate(text, lang, mode, "sarvam")
