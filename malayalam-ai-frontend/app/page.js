@@ -94,8 +94,9 @@ export default function Home() {
   const startRecording = async () => {
     resetResults();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000, channelCount: 1 } });
+      const options = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 128000 };
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
@@ -104,7 +105,7 @@ export default function Home() {
         await sendAudioStream(blob);
         stream.getTracks().forEach(t => t.stop());
       };
-      mediaRecorder.start(250);
+      mediaRecorder.start(1000);
       setRecording(true);
     } catch (err) { setError('Microphone access denied.'); }
   };
@@ -331,6 +332,8 @@ export default function Home() {
     </main>
   );
 }
+
+
 
 
 

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0f1e; color: #e2e8f0; padding: 20px; min-height: 100vh; }
+  
+  h1 { font-size: 18px; font-weight: 700; color: #10b981; margin-bottom: 4px; letter-spacing: 0.5px; }
+  .subtitle { font-size: 11px; color: #64748b; margin-bottom: 20px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid #1e293b; background: #0f172a; color: #64748b; transition: all 0.2s; }
+  .tab.active { background: #10b981; color: #000; border-color: #10b981; }
+
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ARCHITECTURE */
+  .arch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .arch-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; }
+  .arch-card h3 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .arch-card.green h3 { color: #10b981; }
+  .arch-card.blue h3 { color: #3b82f6; }
+  .arch-card.purple h3 { color: #a855f7; }
+  .arch-card.yellow h3 { color: #f59e0b; }
+  .arch-item { font-size: 11px; color: #94a3b8; padding: 3px 0; border-bottom: 1px solid #1e293b; }
+  .arch-item:last-child { border: none; }
+  .arch-item span { color: #e2e8f0; font-weight: 500; }
+
+  /* TIMELINE */
+  .timeline { position: relative; padding-left: 20px; }
+  .timeline::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: #1e293b; }
+  .tl-item { position: relative; margin-bottom: 14px; }
+  .tl-dot { position: absolute; left: -16px; top: 3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid; }
+  .tl-dot.done { background: #10b981; border-color: #10b981; }
+  .tl-dot.fix { background: #ef4444; border-color: #ef4444; }
+  .tl-dot.today { background: #3b82f6; border-color: #3b82f6; }
+  .tl-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 2px; }
+  .tl-label.done { color: #10b981; }
+  .tl-label.fix { color: #ef4444; }
+  .tl-label.today { color: #3b82f6; }
+  .tl-title { font-size: 13px; font-weight: 600; color: #f1f5f9; margin-bottom: 3px; }
+  .tl-desc { font-size: 11px; color: #64748b; line-height: 1.5; }
+
+  /* PROBLEMS */
+  .prob-list { display: flex; flex-direction: column; gap: 8px; }
+  .prob-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; cursor: pointer; }
+  .prob-card:hover { border-color: #334155; }
+  .prob-header { display: flex; justify-content: space-between; align-items: center; }
+  .prob-tag { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 2px 8px; border-radius: 10px; }
+  .prob-tag.bug { background: #ef4444/20; color: #ef4444; border: 1px solid #ef444440; }
+  .prob-tag.infra { background: #f59e0b20; color: #f59e0b; border: 1px solid #f59e0b40; }
+  .prob-tag.ai { background: #a855f720; color: #a855f7; border: 1px solid #a855f740; }
+  .prob-title { font-size: 12px; font-weight: 600; color: #f1f5f9; margin: 6px 0 4px; }
+  .prob-solution { font-size: 11px; color: #10b981; line-height: 1.4; }
+  .prob-cause { font-size: 11px; color: #94a3b8; line-height: 1.4; margin-bottom: 4px; }
+
+  /* REMAINING */
+  .phase { margin-bottom: 16px; }
+  .phase-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #1e293b; }
+  .todo-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid #0f172a; }
+  .todo-num { min-width: 20px; height: 20px; border-radius: 50%; background: #1e293b; color: #94a3b8; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .todo-text { font-size: 12px; color: #cbd5e1; line-height: 1.4; }
+  .todo-text strong { color: #f1f5f9; display: block; font-size: 12px; }
+  .todo-text small { color: #475569; font-size: 10px; }
+  .priority { display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 8px; margin-left: 4px; vertical-align: middle; }
+  .p-high { background: #ef444420; color: #ef4444; border: 1px solid #ef444430; }
+  .p-med { background: #f59e0b20; color: #f59e0b; border: 1px solid #f59e0b30; }
+  .p-low { background: #3b82f620; color: #3b82f6; border: 1px solid #3b82f630; }
+
+  /* TODAY */
+  .today-step { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+  .step-num { min-width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #10b981, #3b82f6); color: #000; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .step-content { flex: 1; }
+  .step-title { font-size: 13px; font-weight: 600; color: #f1f5f9; margin-bottom: 3px; }
+  .step-detail { font-size: 11px; color: #64748b; line-height: 1.5; }
+  .step-result { font-size: 11px; color: #10b981; margin-top: 3px; }
+  .code-pill { display: inline-block; background: #1e293b; color: #a5b4fc; font-family: monospace; font-size: 10px; padding: 1px 6px; border-radius: 4px; margin: 1px; }
+
+  .legend { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .leg-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #64748b; }
+  .leg-dot { width: 8px; height: 8px; border-radius: 50%; }
+</style>
+</head>
+<body>
+
+<h1>🎙️ Malayalam Voice AI — Project Summary</h1>
+<p class="subtitle">Full stack SaaS · FastAPI + Next.js · Railway + Vercel · faster-whisper medium</p>
+
+<div class="tabs">
+  <div class="tab active" onclick="show('arch')">🏗️ Architecture</div>
+  <div class="tab" onclick="show('timeline')">📅 Timeline</div>
+  <div class="tab" onclick="show('today')">⚡ Today's Work</div>
+  <div class="tab" onclick="show('problems')">🐛 Problems & Fixes</div>
+  <div class="tab" onclick="show('remaining')">🚀 What's Remaining</div>
+</div>
+
+<!-- ARCHITECTURE -->
+<div id="arch" class="section active">
+  <div class="arch-grid">
+    <div class="arch-card green">
+      <h3>Backend · Railway</h3>
+      <div class="arch-item"><span>FastAPI</span> · REST + SSE streaming</div>
+      <div class="arch-item"><span>faster-whisper medium</span> · int8 CPU</div>
+      <div class="arch-item"><span>Dual pass</span> · translate + transcribe</div>
+      <div class="arch-item"><span>Silero VAD</span> · vad_filter=True</div>
+      <div class="arch-item"><span>FFmpeg + PyAV</span> · WebM decode</div>
+      <div class="arch-item"><span>SQLModel + SQLite</span> · usage records</div>
+      <div class="arch-item"><span>OAuth2 JWT</span> · auth/login</div>
+      <div class="arch-item"><span>Razorpay</span> · payment plans</div>
+    </div>
+    <div class="arch-card blue">
+      <h3>Frontend · Vercel</h3>
+      <div class="arch-item"><span>Next.js</span> · App Router</div>
+      <div class="arch-item"><span>TailwindCSS</span> · utility-first</div>
+      <div class="arch-item"><span>Web Audio API</span> · waveform canvas</div>
+      <div class="arch-item"><span>SSE reader</span> · streaming UI</div>
+      <div class="arch-item"><span>MediaRecorder</span> · webm/opus</div>
+      <div class="arch-item"><span>11 style chips</span> · tone selector</div>
+      <div class="arch-item"><span>Dark/light mode</span> · state toggle</div>
+      <div class="arch-item"><span>File upload</span> · mp3/wav/webm</div>
+    </div>
+    <div class="arch-card purple">
+      <h3>AI Pipeline</h3>
+      <div class="arch-item"><span>Pass 1:</span> task=translate → English</div>
+      <div class="arch-item"><span>Pass 2:</span> task=transcribe → Malayalam</div>
+      <div class="arch-item"><span>Streaming:</span> segment yields → SSE queue</div>
+      <div class="arch-item"><span>Refine:</span> GPT-3.5 grammar fix (optional)</div>
+      <div class="arch-item"><span>Model:</span> medium (upgraded from small)</div>
+      <div class="arch-item"><span>VAD:</span> silence_ms=300, pad=400</div>
+    </div>
+    <div class="arch-card yellow">
+      <h3>Repos · Deploy</h3>
+      <div class="arch-item"><span>Backend repo:</span> main branch</div>
+      <div class="arch-item"><span>Frontend repo:</span> mamcbt-ai/malayalam-ai-frontend</div>
+      <div class="arch-item"><span>Railway:</span> root dir = empty</div>
+      <div class="arch-item"><span>Vercel:</span> watches master branch</div>
+      <div class="arch-item"><span>nixpacks.toml:</span> ffmpeg + libgomp</div>
+      <div class="arch-item"><span>env vars:</span> OPENAI_API_KEY (optional)</div>
+    </div>
+  </div>
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:12px;">
+    <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Live URLs</div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">🟢 Backend: <span style="color:#10b981;">use-ai-malayalamai-production-ee70.up.railway.app</span></div>
+    <div style="font-size:11px;color:#94a3b8;">🔵 Frontend: <span style="color:#3b82f6;">malayalam-ai-frontend.vercel.app</span></div>
+  </div>
+</div>
+
+<!-- TIMELINE -->
+<div id="timeline" class="section">
+  <div class="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#10b981"></div>Completed</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#ef4444"></div>Bug Fixed</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#3b82f6"></div>Today</div>
+  </div>
+  <div class="timeline">
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-label done">Phase 1 — Foundation</div>
+      <div class="tl-title">Backend Setup</div>
+      <div class="tl-desc">FastAPI server · faster-whisper small model · SQLite DB · JWT auth · Railway deploy</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-label done">Phase 2 — Frontend</div>
+      <div class="tl-title">Basic Recording UI</div>
+      <div class="tl-desc">Next.js app · MediaRecorder · audio upload · result display · Vercel deploy</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot fix"></div>
+      <div class="tl-label fix">Bug Fix — Output Boxes</div>
+      <div class="tl-title">English Translation + Malayalam showing "–"</div>
+      <div class="tl-desc">Frontend read wrong field name. Backend never ran Malayalam pass. Both fixed.</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-label done">Phase 3 — Accuracy</div>
+      <div class="tl-title">Upgraded to Whisper medium model</div>
+      <div class="tl-desc">Switched from small → medium · Added dual-pass · Removed initial_prompt hallucination · Added VAD</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-label done">Phase 4 — Streaming</div>
+      <div class="tl-title">Live SSE Streaming Endpoint</div>
+      <div class="tl-desc">threading.Thread + asyncio.Queue bridge · /audio/process-stream · text appears word by word</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot fix"></div>
+      <div class="tl-label fix">Bug Fix — Railway Deploy</div>
+      <div class="tl-title">Railway "directory backend does not exist"</div>
+      <div class="tl-desc">Root Directory was set to "backend" but main branch IS the root. Cleared to empty.</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot today"></div>
+      <div class="tl-label today">Today — UI Upgrade</div>
+      <div class="tl-title">Production Glassmorphism UI Deployed</div>
+      <div class="tl-desc">New page.js · glassmorphism · waveform · 11 styles · copy buttons · dark/light mode · file upload · pushed to Vercel</div>
+    </div>
+  </div>
+</div>
+
+<!-- TODAY -->
+<div id="today" class="section">
+  <div class="today-step">
+    <div class="step-num">1</div>
+    <div class="step-content">
+      <div class="step-title">Resumed from previous session</div>
+      <div class="step-detail">Reviewed all 4 key files already in workspace: AudioRecorder.jsx, audio.py, asr_service.py, translation_service.py</div>
+      <div class="step-result">✓ Confirmed production UI was already written to workspace folder</div>
+    </div>
+  </div>
+  <div class="today-step">
+    <div class="step-num">2</div>
+    <div class="step-content">
+      <div class="step-title">Presented the new page.js file</div>
+      <div class="step-detail">548-line production UI at <span class="code-pill">frontend/app/page.js</span> — glassmorphism, waveform, 11 style chips, copy buttons, dark mode, file upload, Razorpay upgrade modal</div>
+      <div class="step-result">✓ File presented as clickable card for download</div>
+    </div>
+  </div>
+  <div class="today-step">
+    <div class="step-num">3</div>
+    <div class="step-content">
+      <div class="step-title">Provided deployment commands</div>
+      <div class="step-detail">PowerShell <span class="code-pill">Copy-Item</span> to copy file into Vercel repo, then <span class="code-pill">git add → commit → push origin master</span></div>
+      <div class="step-result">✓ User ran the commands successfully</div>
+    </div>
+  </div>
+  <div class="today-step">
+    <div class="step-num">4</div>
+    <div class="step-content">
+      <div class="step-title">Deploy confirmed — new UI live on Vercel</div>
+      <div class="step-detail">Git output showed: <span class="code-pill">e52966c</span> and <span class="code-pill">0984486</span> pushed successfully to mamcbt-ai/malayalam-ai-frontend master. "nothing to commit" on final push = file was already identical → already deployed.</div>
+      <div class="step-result">✓ New glassmorphism UI is live at malayalam-ai-frontend.vercel.app</div>
+    </div>
+  </div>
+  <div class="today-step">
+    <div class="step-num">5</div>
+    <div class="step-content">
+      <div class="step-title">Next-generation UI spec received</div>
+      <div class="step-detail">User provided comprehensive 200+ line spec: Framer Motion, Three.js, React Three Fiber, GSAP, Lottie, ShadCN, 3D orb, particle background, holographic rings, bento grid, floating dock, VisionOS inspiration</div>
+      <div class="step-result">⏳ Awaiting build — this is the next major task</div>
+    </div>
+  </div>
+</div>
+
+<!-- PROBLEMS -->
+<div id="problems" class="section">
+  <div class="prob-list">
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag bug">UI Bug</span></div>
+      <div class="prob-title">English Translation box showed "–" (dash)</div>
+      <div class="prob-cause">Cause: Frontend read result.translation_output?.translation — wrong field path</div>
+      <div class="prob-solution">✓ Fix: Changed to result.refined_text. Also fixed translation_service.py to never return empty.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag bug">AI Bug</span></div>
+      <div class="prob-title">Malayalam Unicode box showed "–" (dash)</div>
+      <div class="prob-cause">Cause: Backend only ran one Whisper pass (translate). No Malayalam transcription was happening.</div>
+      <div class="prob-solution">✓ Fix: Added Pass 2 with task="transcribe" in asr_service.py — now returns malayalam_text field.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag ai">AI Bug</span></div>
+      <div class="prob-title">Transcribed "RAAAAR" / "And" / "The" instead of real speech</div>
+      <div class="prob-cause">Cause: initial_prompt="Malayalam speech translated to English:" caused Whisper to hallucinate on short/unclear audio</div>
+      <div class="prob-solution">✓ Fix: Removed initial_prompt. Added no_speech_threshold=0.6, condition_on_previous_text=False.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag infra">Infra</span></div>
+      <div class="prob-title">Railway: "directory backend does not exist"</div>
+      <div class="prob-cause">Cause: Railway Root Directory was set to "backend" but the main branch IS the backend root (not a subfolder)</div>
+      <div class="prob-solution">✓ Fix: Cleared Root Directory to empty in Railway Settings → Sources.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag infra">Infra</span></div>
+      <div class="prob-title">Vercel not updating after git push</div>
+      <div class="prob-cause">Cause: Vercel watches mamcbt-ai/malayalam-ai-frontend repo (separate), not the monorepo. Webhook sometimes needed a trigger.</div>
+      <div class="prob-solution">✓ Fix: Push directly to malayalam-ai-frontend master. Use git commit --allow-empty -m "trigger" to force deploy.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag infra">Infra</span></div>
+      <div class="prob-title">Railway not picking up new commits</div>
+      <div class="prob-cause">Cause: Railway was watching "master" branch but backend repo uses "main" branch</div>
+      <div class="prob-solution">✓ Fix: Changed Railway Source branch setting from master → main.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag bug">Usage Bug</span></div>
+      <div class="prob-title">Daily limit counting ALL users, not just current user</div>
+      <div class="prob-cause">Cause: check_usage_limit() fetched all AudioRecords without filtering by user_id</div>
+      <div class="prob-solution">✓ Fix: Added filter for r.user_id == user.id AND r.created_at.date() == date.today()</div>
+    </div>
+  </div>
+</div>
+
+<!-- REMAINING -->
+<div id="remaining" class="section">
+  <div class="phase">
+    <div class="phase-title">🔴 Immediate — Next Session</div>
+    <div class="todo-item">
+      <div class="todo-num">1</div>
+      <div class="todo-text"><strong>Next-Gen UI Build <span class="priority p-high">HIGH</span></strong>Framer Motion + Three.js 3D orb · particle background · VisionOS glass · bento grid · floating dock · ShadCN components</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">2</div>
+      <div class="todo-text"><strong>Translation Style Backend Support <span class="priority p-high">HIGH</span></strong>Backend currently ignores style param. Update translation_service.py with 11 different GPT system prompts per style.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">3</div>
+      <div class="todo-text"><strong>Accuracy Testing <span class="priority p-high">HIGH</span></strong>Test with 8–10 sec clear Malayalam speech. Verify medium model output quality. Check Malayalam Unicode script rendering.</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-title">🟡 Phase 2 — Core Features</div>
+    <div class="todo-item">
+      <div class="todo-num">4</div>
+      <div class="todo-text"><strong>Confidence Score Display <span class="priority p-med">MED</span></strong>faster-whisper returns segment.avg_logprob. Convert to % confidence and show in UI cards.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">5</div>
+      <div class="todo-text"><strong>Voice History / Timeline <span class="priority p-med">MED</span></strong>GET /audio/history endpoint · show past recordings with timestamps · delete option</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">6</div>
+      <div class="todo-text"><strong>Download as TXT / PDF <span class="priority p-med">MED</span></strong>Frontend download button already exists. Add PDF export using pdfmake or jsPDF.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">7</div>
+      <div class="todo-text"><strong>Noise Suppression <span class="priority p-med">MED</span></strong>Pre-process audio with noisereduce library before sending to Whisper for cleaner results.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">8</div>
+      <div class="todo-text"><strong>Text-to-Speech Output <span class="priority p-med">MED</span></strong>Add TTS button using gTTS or ElevenLabs API to read back the Malayalam output aloud.</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-title">🔵 Phase 3 — Advanced</div>
+    <div class="todo-item">
+      <div class="todo-num">9</div>
+      <div class="todo-text"><strong>Speaker Diarization <span class="priority p-low">LOW</span></strong>pyannote.audio to detect who spoke when. Useful for meetings/interviews.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">10</div>
+      <div class="todo-text"><strong>Real-time Analytics Dashboard <span class="priority p-low">LOW</span></strong>Usage graph · words transcribed · language breakdown · plan usage meter</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">11</div>
+      <div class="todo-text"><strong>Redis Job Queue <span class="priority p-low">LOW</span></strong>Queue heavy transcription jobs with Celery + Redis for multi-user scaling on Railway.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">12</div>
+      <div class="todo-text"><strong>Dialect Handling <span class="priority p-low">LOW</span></strong>Detect Thrissur / Kozhikode / Thiruvananthapuram dialects and adjust prompts accordingly.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">13</div>
+      <div class="todo-text"><strong>Mobile PWA <span class="priority p-low">LOW</span></strong>next-pwa · service worker · offline support · add to home screen on Android/iOS</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">14</div>
+      <div class="todo-text"><strong>Production Razorpay Integration <span class="priority p-low">LOW</span></strong>Live keys · webhook verification · plan upgrade flow · usage limit enforcement per plan</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

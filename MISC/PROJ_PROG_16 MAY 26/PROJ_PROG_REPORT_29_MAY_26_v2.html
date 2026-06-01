@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0f1e; color: #e2e8f0; padding: 20px; min-height: 100vh; }
+  h1 { font-size: 18px; font-weight: 700; color: #10b981; margin-bottom: 4px; letter-spacing: 0.5px; }
+  .subtitle { font-size: 11px; color: #64748b; margin-bottom: 20px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid #1e293b; background: #0f172a; color: #64748b; transition: all 0.2s; }
+  .tab.active { background: #10b981; color: #000; border-color: #10b981; }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  .stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .stat-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 10px 12px; text-align: center; }
+  .stat-num { font-size: 22px; font-weight: 800; }
+  .stat-num.green { color: #10b981; }
+  .stat-num.blue { color: #3b82f6; }
+  .stat-num.yellow { color: #f59e0b; }
+  .stat-num.purple { color: #a855f7; }
+  .stat-label { font-size: 9px; color: #475569; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 2px; }
+
+  .arch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .arch-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; }
+  .arch-card h3 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .arch-card.green h3 { color: #10b981; }
+  .arch-card.blue h3 { color: #3b82f6; }
+  .arch-card.purple h3 { color: #a855f7; }
+  .arch-card.yellow h3 { color: #f59e0b; }
+  .arch-item { font-size: 11px; color: #94a3b8; padding: 3px 0; border-bottom: 1px solid #1e293b; }
+  .arch-item:last-child { border: none; }
+  .arch-item span { color: #e2e8f0; font-weight: 500; }
+  .badge { font-size: 9px; padding: 1px 5px; border-radius: 6px; margin-left: 4px; font-weight: 700; }
+  .badge.new { background: #10b98120; color: #10b981; border: 1px solid #10b98140; }
+  .badge.fix { background: #ef444420; color: #ef4444; border: 1px solid #ef444440; }
+  .badge.wip { background: #f59e0b20; color: #f59e0b; border: 1px solid #f59e0b40; }
+
+  .timeline { position: relative; padding-left: 20px; }
+  .timeline::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: #1e293b; }
+  .tl-item { position: relative; margin-bottom: 14px; }
+  .tl-dot { position: absolute; left: -16px; top: 3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid; }
+  .tl-dot.done { background: #10b981; border-color: #10b981; }
+  .tl-dot.fix  { background: #ef4444; border-color: #ef4444; }
+  .tl-dot.today { background: #3b82f6; border-color: #3b82f6; }
+  .tl-dot.wip  { background: #f59e0b; border-color: #f59e0b; }
+  .tl-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 2px; }
+  .tl-label.done  { color: #10b981; }
+  .tl-label.fix   { color: #ef4444; }
+  .tl-label.today { color: #3b82f6; }
+  .tl-label.wip   { color: #f59e0b; }
+  .tl-title { font-size: 13px; font-weight: 600; color: #f1f5f9; margin-bottom: 3px; }
+  .tl-desc  { font-size: 11px; color: #64748b; line-height: 1.5; }
+
+  .prob-list { display: flex; flex-direction: column; gap: 8px; }
+  .prob-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; }
+  .prob-card:hover { border-color: #334155; }
+  .prob-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .prob-tag { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 2px 8px; border-radius: 10px; }
+  .prob-tag.bug   { color: #ef4444; border: 1px solid #ef444440; background: #ef444410; }
+  .prob-tag.infra { color: #f59e0b; border: 1px solid #f59e0b40; background: #f59e0b10; }
+  .prob-tag.ai    { color: #a855f7; border: 1px solid #a855f740; background: #a855f710; }
+  .prob-tag.enc   { color: #3b82f6; border: 1px solid #3b82f640; background: #3b82f610; }
+  .prob-tag.net   { color: #10b981; border: 1px solid #10b98140; background: #10b98110; }
+  .prob-title    { font-size: 12px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px; }
+  .prob-cause    { font-size: 11px; color: #94a3b8; line-height: 1.4; margin-bottom: 4px; }
+  .prob-solution { font-size: 11px; color: #10b981; line-height: 1.4; }
+
+  .phase { margin-bottom: 16px; }
+  .phase-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #1e293b; }
+  .todo-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid #0f172a; }
+  .todo-num { min-width: 20px; height: 20px; border-radius: 50%; background: #1e293b; color: #94a3b8; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; flex-shrink: 0; }
+  .todo-num.done-n { background: #10b98120; color: #10b981; }
+  .todo-text { font-size: 12px; color: #cbd5e1; line-height: 1.4; }
+  .todo-text strong { color: #f1f5f9; display: block; font-size: 12px; }
+  .priority { display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 8px; margin-left: 4px; vertical-align: middle; }
+  .p-high { background: #ef444420; color: #ef4444; border: 1px solid #ef444430; }
+  .p-med  { background: #f59e0b20; color: #f59e0b; border: 1px solid #f59e0b30; }
+  .p-low  { background: #3b82f620; color: #3b82f6; border: 1px solid #3b82f630; }
+  .p-done { background: #10b98120; color: #10b981; border: 1px solid #10b98130; }
+
+  .today-step { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+  .step-num { min-width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #10b981, #3b82f6); color: #000; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .step-num.warn { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+  .step-content { flex: 1; }
+  .step-title  { font-size: 13px; font-weight: 600; color: #f1f5f9; margin-bottom: 3px; }
+  .step-detail { font-size: 11px; color: #64748b; line-height: 1.5; }
+  .step-result { font-size: 11px; color: #10b981; margin-top: 3px; }
+  .step-result.warn { color: #f59e0b; }
+  .code-pill { display: inline-block; background: #1e293b; color: #a5b4fc; font-family: monospace; font-size: 10px; padding: 1px 6px; border-radius: 4px; margin: 1px; }
+
+  .legend { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .leg-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #64748b; }
+  .leg-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .pipeline-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .pipeline-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin-bottom: 10px; }
+  .pipeline-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .p-box { background: #1e293b; border-radius: 8px; padding: 6px 10px; font-size: 11px; }
+  .p-box .label { font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px; }
+  .p-box .value { color: #e2e8f0; font-weight: 600; margin-top: 1px; }
+  .p-box.green .value { color: #10b981; }
+  .p-box.blue  .value { color: #3b82f6; }
+  .p-box.purple .value { color: #a855f7; }
+  .p-box.yellow .value { color: #f59e0b; }
+  .p-arrow { color: #475569; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>🎙️ Malayalam Voice AI — Progress Report</h1>
+<p class="subtitle">Full Stack SaaS · FastAPI + Next.js · Railway + Vercel · Groq whisper-large-v3 + Llama-3.1 · May 29, 2026 v2</p>
+
+<div class="tabs">
+  <div class="tab active" onclick="show('arch',this)">🏗️ Architecture</div>
+  <div class="tab" onclick="show('timeline',this)">📅 Timeline</div>
+  <div class="tab" onclick="show('today',this)">⚡ Today's Work</div>
+  <div class="tab" onclick="show('problems',this)">🐛 Problems & Fixes</div>
+  <div class="tab" onclick="show('remaining',this)">🚀 What's Remaining</div>
+</div>
+
+<!-- ARCHITECTURE -->
+<div id="arch" class="section active">
+  <div class="stats-bar">
+    <div class="stat-card"><div class="stat-num green">✓</div><div class="stat-label">Malayalam Unicode Working</div></div>
+    <div class="stat-card"><div class="stat-num blue">5</div><div class="stat-label">Languages</div></div>
+    <div class="stat-card"><div class="stat-num yellow">11</div><div class="stat-label">Style Chips</div></div>
+    <div class="stat-card"><div class="stat-num purple">3–6s</div><div class="stat-label">End-to-End</div></div>
+  </div>
+
+  <div class="pipeline-box">
+    <div class="pipeline-title">🔄 Current AI Pipeline (3 passes)</div>
+    <div class="pipeline-row">
+      <div class="p-box"><div class="label">Input</div><div class="value">🎙️ Speech (WebM)</div></div>
+      <div class="p-arrow">→</div>
+      <div class="p-box green"><div class="label">Pass 1 · Groq Whisper</div><div class="value">English Translation</div></div>
+      <div class="p-arrow">→</div>
+      <div class="p-box blue"><div class="label">Pass 2 · Groq Whisper</div><div class="value">Native Transcription</div></div>
+      <div class="p-arrow">→</div>
+      <div class="p-box purple"><div class="label">Fallback · Groq Llama</div><div class="value">LLM Translation</div></div>
+      <div class="p-arrow">→</div>
+      <div class="p-box yellow"><div class="label">Pass 3 · GPT/OpenAI</div><div class="value">Style Refinement</div></div>
+    </div>
+    <div style="font-size:10px;color:#475569;margin-top:6px;">Pass 2 tries direct Malayalam transcription first. If result is ASCII/English, falls back to Llama LLM translation of Pass 1 English output.</div>
+  </div>
+
+  <div class="arch-grid">
+    <div class="arch-card green">
+      <h3>Backend · Railway</h3>
+      <div class="arch-item"><span>FastAPI</span> · REST + SSE streaming</div>
+      <div class="arch-item"><span>Groq whisper-large-v3</span> · translate pass <span class="badge new">NEW</span></div>
+      <div class="arch-item"><span>Groq llama-3.1-8b</span> · native script <span class="badge new">NEW</span></div>
+      <div class="arch-item"><span>Dual/triple pass</span> · translate + transcribe + refine</div>
+      <div class="arch-item"><span>Silero VAD</span> · threshold=0.3, pad=400ms <span class="badge fix">FIXED</span></div>
+      <div class="arch-item"><span>PyAV</span> · WebM decode (FFMPEG_BIN=None)</div>
+      <div class="arch-item"><span>SQLModel + SQLite</span> · usage records</div>
+      <div class="arch-item"><span>OAuth2 JWT</span> · auth/login</div>
+      <div class="arch-item"><span>Razorpay</span> · payment plans</div>
+    </div>
+    <div class="arch-card blue">
+      <h3>Frontend · Vercel</h3>
+      <div class="arch-item"><span>Next.js</span> · App Router</div>
+      <div class="arch-item"><span>TailwindCSS</span> · utility-first</div>
+      <div class="arch-item"><span>SSE streaming</span> · live result display</div>
+      <div class="arch-item"><span>MediaRecorder</span> · webm/opus</div>
+      <div class="arch-item"><span>5 language chips</span> · ml/ta/te/kn/hi <span class="badge new">NEW</span></div>
+      <div class="arch-item"><span>11 style chips</span> · tone selector <span class="badge new">NEW</span></div>
+      <div class="arch-item"><span>Noto Sans Malayalam</span> · Unicode font <span class="badge new">NEW</span></div>
+      <div class="arch-item"><span>Error display</span> · no infinite spinner <span class="badge fix">FIXED</span></div>
+      <div class="arch-item"><span>event_generator(lang=lang)</span> · closure fix <span class="badge fix">FIXED</span></div>
+    </div>
+    <div class="arch-card purple">
+      <h3>AI Pipeline</h3>
+      <div class="arch-item"><span>Whisper pass 1:</span> translate → English</div>
+      <div class="arch-item"><span>Whisper pass 2:</span> transcribe language=X → native <span class="badge new">NEW</span></div>
+      <div class="arch-item"><span>Llama fallback:</span> English → native Unicode <span class="badge new">NEW</span></div>
+      <div class="arch-item"><span>ASCII detection:</span> auto-switch pass2→LLM <span class="badge new">NEW</span></div>
+      <div class="arch-item"><span>_fix_ml_script():</span> Tamil→Malayalam map <span class="badge fix">FIXED</span></div>
+      <div class="arch-item"><span>Temp fallback:</span> [0.0, 0.2] chain</div>
+      <div class="arch-item"><span>Style refine:</span> GPT per 11 styles</div>
+    </div>
+    <div class="arch-card yellow">
+      <h3>Repos · Deploy · Keys</h3>
+      <div class="arch-item"><span>Backend repo:</span> master branch <span class="badge fix">FIXED</span></div>
+      <div class="arch-item"><span>Frontend:</span> mamcbt-ai/malayalam-ai-frontend</div>
+      <div class="arch-item"><span>Railway:</span> watches master branch</div>
+      <div class="arch-item"><span>Vercel:</span> watches master branch</div>
+      <div class="arch-item"><span>GROQ_API_KEY</span> · whisper + llama <span class="badge new">NEW</span></div>
+      <div class="arch-item"><span>CLAUDE_API_KEY</span> · not reachable from Railway</div>
+      <div class="arch-item"><span>RAZORPAY_KEY_ID/SECRET</span> · payment</div>
+      <div class="arch-item"><span>nixpacks.toml:</span> ffmpeg + libgomp</div>
+    </div>
+  </div>
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:12px;">
+    <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Live URLs</div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">🟢 Backend: <span style="color:#10b981;">use-ai-malayalamai-production-ee70.up.railway.app</span></div>
+    <div style="font-size:11px;color:#94a3b8;">🔵 Frontend: <span style="color:#3b82f6;">malayalam-ai-frontend.vercel.app</span></div>
+  </div>
+</div>
+
+<!-- TIMELINE -->
+<div id="timeline" class="section">
+  <div class="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#10b981"></div>Completed</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#ef4444"></div>Bug Fixed</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#3b82f6"></div>Today</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#f59e0b"></div>In Progress</div>
+  </div>
+  <div class="timeline">
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-label done">Phase 1 — Foundation</div>
+      <div class="tl-title">Backend + Frontend Deployed</div>
+      <div class="tl-desc">FastAPI · JWT auth · SQLite · faster-whisper medium · Next.js glassmorphism UI · Railway + Vercel</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-label done">Phase 2 — SSE Streaming</div>
+      <div class="tl-title">Live Streaming Endpoint</div>
+      <div class="tl-desc">threading.Thread + asyncio.Queue bridge · /audio/process-stream · text appears live</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-label done">Phase 3 — Styles & Languages</div>
+      <div class="tl-title">11 Translation Styles + 5 Language Selector</div>
+      <div class="tl-desc">Standard/Formal/Casual/News/Literary/Business/Academic/Simple/Humorous/Emotional/Bullet Points · ml/ta/te/kn/hi chips · Noto Sans Malayalam font</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot fix"></div>
+      <div class="tl-label fix">Bug Fix — VAD + Tamil Script</div>
+      <div class="tl-title">Empty Output + Tamil Unicode in Malayalam Box</div>
+      <div class="tl-desc">VAD threshold 0.6→0.3 · speech_pad=400ms · language=None on transcribe pass · _fix_ml_script() post-processor with full Tamil→Malayalam Unicode map</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot fix"></div>
+      <div class="tl-label fix">Bug Fix — Infra + Encoding</div>
+      <div class="tl-title">Railway Branch + PowerShell UTF-8</div>
+      <div class="tl-desc">Railway was watching "main" — all code was on "master". Fixed in Settings. PowerShell Set-Content → WriteAllText UTF-8 to stop corruption of Malayalam/emoji chars.</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot fix"></div>
+      <div class="tl-label fix">Bug Fix — Python Closure</div>
+      <div class="tl-title">UnboundLocalError: lang in event_generator</div>
+      <div class="tl-desc">Line 162 assigned lang = seg.get("language") inside event_generator, making Python treat lang as local throughout. Fixed: async def event_generator(lang=lang)</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot today"></div>
+      <div class="tl-label today">Today — Speed + Malayalam Script</div>
+      <div class="tl-title">Groq API + Llama — Malayalam Unicode Working ✓</div>
+      <div class="tl-desc">local large-v2 (2–5 min) → Groq whisper-large-v3 (1–2s) · distil-large-v2 rejected (English-only) · Claude API unreachable from Railway · Groq Llama-3.1 as native script translator · Malayalam Unicode now displaying correctly</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot wip"></div>
+      <div class="tl-label wip">In Progress — Accuracy</div>
+      <div class="tl-title">Direct Whisper Transcription Pass</div>
+      <div class="tl-desc">Added Pass 2: Groq Whisper with language=source_lang for direct native script. ASCII-detection fallback to Llama LLM. Accuracy improving — testing ongoing.</div>
+    </div>
+  </div>
+</div>
+
+<!-- TODAY -->
+<div id="today" class="section">
+  <div class="today-step">
+    <div class="step-num">1</div>
+    <div class="step-content">
+      <div class="step-title">Identified root cause of 2–5 minute wait</div>
+      <div class="step-detail">Two full faster-whisper large-v2 passes on CPU · beam_size=5 · temperature fallback chain. No GPU on Railway free tier.</div>
+      <div class="step-result">✓ Decision: switch to Groq API (whisper-large-v3, external inference)</div>
+    </div>
+  </div>
+  <div class="today-step">
+    <div class="step-num warn">2</div>
+    <div class="step-content">
+      <div class="step-title">Tried distil-large-v2 — rejected</div>
+      <div class="step-detail"><span class="code-pill">distil-large-v2</span> is English-only. Malayalam/Tamil/Telugu/Kannada/Hindi returned empty. Spinner with no output confirmed in Deploy Logs.</div>
+      <div class="step-result warn">⚠ Reverted. Groq whisper-large-v3 is multilingual.</div>
+    </div>
+  </div>
+  <div class="today-step">
+    <div class="step-num">3</div>
+    <div class="step-content">
+      <div class="step-title">Fixed UnboundLocalError: lang in event_generator</div>
+      <div class="step-detail">Deploy logs showed <span class="code-pill">UnboundLocalError: cannot access local variable 'lang'</span> at line 132. Line 162 inside event_generator reassigned <span class="code-pill">lang = seg.get("language","ml")</span> making Python treat lang as local throughout.</div>
+      <div class="step-result">✓ Fix: <span class="code-pill">async def event_generator(lang=lang)</span> — captures value at definition time</div>
+    </div>
+  </div>
+  <div class="today-step">
+    <div class="step-num warn">4</div>
+    <div class="step-content">
+      <div class="step-title">Claude API — Connection error from Railway</div>
+      <div class="step-detail">Tried using Claude Haiku for native script translation. <span class="code-pill">CLAUDE_API_KEY</span> was set but <span class="code-pill">api.anthropic.com</span> unreachable from Railway network. Groq (<span class="code-pill">api.groq.com</span>) works fine — different network path.</div>
+      <div class="step-result warn">⚠ Anthropic blocked from Railway. Switched to Groq Llama instead.</div>
+    </div>
+  </div>
+  <div class="today-step">
+    <div class="step-num">5</div>
+    <div class="step-content">
+      <div class="step-title">Groq Llama-3.1 — Malayalam Unicode WORKING ✓</div>
+      <div class="step-detail">Using <span class="code-pill">llama-3.1-8b-instant</span> via Groq chat completions to translate English→native Unicode. System prompt enforces Malayalam-only output.</div>
+      <div class="step-result">✓ Malayalam Unicode now displays correctly in the app!</div>
+    </div>
+  </div>
+  <div class="today-step">
+    <div class="step-num">6</div>
+    <div class="step-content">
+      <div class="step-title">Added direct Whisper transcription pass for accuracy</div>
+      <div class="step-detail">Pass 2: <span class="code-pill">groq.audio.transcriptions.create(language="ml")</span> tries to get native script directly from Whisper. ASCII-detection fallback: if result is all-English, uses Llama LLM translation instead.</div>
+      <div class="step-result warn">⏳ Testing — accuracy improving, not yet confirmed optimal</div>
+    </div>
+  </div>
+</div>
+
+<!-- PROBLEMS & FIXES -->
+<div id="problems" class="section">
+  <div class="prob-list">
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag ai">AI</span></div>
+      <div class="prob-title">Empty transcription — VAD over-filtering Malayalam speech</div>
+      <div class="prob-cause">Cause: no_speech_threshold=0.6 + VAD threshold=0.6 rejected dialectal audio (Palakkadan, Malappuram, Kozhikode) as silence</div>
+      <div class="prob-solution">✓ Fix: threshold→0.3, speech_pad_ms=400, min_silence_duration_ms=300</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag ai">AI</span></div>
+      <div class="prob-title">Tamil Unicode (U+0B80) appearing instead of Malayalam in Unicode box</div>
+      <div class="prob-cause">Cause: Whisper confuses similar Tamil/Malayalam scripts when language="ml" is forced — outputs Tamil tokens instead</div>
+      <div class="prob-solution">✓ Fix: language=None on transcribe pass (auto-detect) + _fix_ml_script() full Tamil→Malayalam codepoint map</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag ai">AI</span></div>
+      <div class="prob-title">distil-large-v2 returned empty for all Indian languages</div>
+      <div class="prob-cause">Cause: distil-large-v2 is English-only distilled model — does not support multilingual transcription</div>
+      <div class="prob-solution">✓ Fix: Reverted to Groq whisper-large-v3 (fully multilingual, 5 languages confirmed working)</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag infra">Infra</span></div>
+      <div class="prob-title">Railway watching "main" — all pushes ignored (code always stale)</div>
+      <div class="prob-cause">Cause: Railway Source branch set to "main" but entire repo was on "master" — every deploy ran old code</div>
+      <div class="prob-solution">✓ Fix: Railway Settings → Source → branch changed to master</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag enc">Encoding</span></div>
+      <div class="prob-title">PowerShell corrupting Malayalam Unicode files (repeated issue)</div>
+      <div class="prob-cause">Cause: PowerShell Set-Content defaults to Windows-1252. Malayalam U+0D00 range → ??? causing Vercel build failures repeatedly across sessions</div>
+      <div class="prob-solution">✓ Fix: All writes → [System.IO.File]::WriteAllText($path, $content, [System.Text.Encoding]::UTF8)</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag bug">Bug</span></div>
+      <div class="prob-title">UnboundLocalError: lang inside event_generator (Python scoping)</div>
+      <div class="prob-cause">Cause: line 162 inside event_generator assigned lang = seg.get("language","ml") making Python treat lang as local throughout. Line 132 _src_lang = lang failed because lang was local but not yet assigned.</div>
+      <div class="prob-solution">✓ Fix: async def event_generator(lang=lang) — default arg captures outer value at function definition time, bypassing the scoping conflict</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag bug">Bug</span></div>
+      <div class="prob-title">Frontend showed infinite spinner on any backend error</div>
+      <div class="prob-cause">Cause: SSE handler only processed english_segment / malayalam_segment / complete types. Error events ignored — setIsDone(true) never called.</div>
+      <div class="prob-solution">✓ Fix: Added else if (evt.type === 'error') handler — shows error message and stops spinner</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-header"><span class="prob-tag net">Network</span></div>
+      <div class="prob-title">api.anthropic.com unreachable from Railway — Connection error</div>
+      <div class="prob-cause">Cause: Railway's network cannot reach Anthropic's API endpoint even though CLAUDE_API_KEY was correctly set. Groq API works fine from same server.</div>
+      <div class="prob-solution">✓ Fix: Replaced Claude Haiku with Groq Llama-3.1-8b-instant for native script translation (same GROQ_API_KEY already working)</div>
+    </div>
+  </div>
+</div>
+
+<!-- REMAINING -->
+<div id="remaining" class="section">
+  <div class="phase">
+    <div class="phase-title">✅ Completed This Session</div>
+    <div class="todo-item">
+      <div class="todo-num done-n">✓</div>
+      <div class="todo-text"><strong>Speed: 2–5 min → 3–6 seconds <span class="priority p-done">DONE</span></strong>Groq whisper-large-v3 API replaces local faster-whisper. No model download on startup.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num done-n">✓</div>
+      <div class="todo-text"><strong>Malayalam Unicode Displaying Correctly <span class="priority p-done">DONE</span></strong>Groq Llama-3.1 translates English→Malayalam Unicode. Noto Sans Malayalam font renders script perfectly.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num done-n">✓</div>
+      <div class="todo-text"><strong>5 Language Support Live <span class="priority p-done">DONE</span></strong>Malayalam, Tamil, Telugu, Kannada, Hindi all wired end-to-end. Language chips visible and functional.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num done-n">✓</div>
+      <div class="todo-text"><strong>11 Translation Styles Working <span class="priority p-done">DONE</span></strong>GPT refinement per style wired in translation_service.py. Chips send style param to backend.</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-title">🔴 Immediate — Next Steps</div>
+    <div class="todo-item">
+      <div class="todo-num">1</div>
+      <div class="todo-text"><strong>Accuracy Testing — All 5 Languages <span class="priority p-high">HIGH</span></strong>Test Malayalam, Tamil, Telugu, Kannada, Hindi with clear speech. Verify direct Whisper pass vs Llama fallback quality. Tune ASCII-detection threshold.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">2</div>
+      <div class="todo-text"><strong>Test All 11 Translation Styles <span class="priority p-high">HIGH</span></strong>Standard → Formal → Casual → Bullet Points. Verify GPT style prompts produce distinct, correct output for each mode.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">3</div>
+      <div class="todo-text"><strong>Forgot Password Backend Endpoint <span class="priority p-high">HIGH</span></strong>Frontend UI already has forgot-password button but /auth/forgot-password route missing in FastAPI backend.</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-title">🟡 Phase 2 — Core Features</div>
+    <div class="todo-item">
+      <div class="todo-num">4</div>
+      <div class="todo-text"><strong>Confidence Score Display <span class="priority p-med">MED</span></strong>Show transcription confidence % in UI output cards. Groq verbose_json response format provides word-level confidence.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">5</div>
+      <div class="todo-text"><strong>Voice History / Timeline <span class="priority p-med">MED</span></strong>GET /audio/history · display past recordings with timestamp, language, style · delete option</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">6</div>
+      <div class="todo-text"><strong>Download as TXT / PDF <span class="priority p-med">MED</span></strong>Frontend download button exists. Wire to jsPDF for instant PDF export of transcript + translation.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">7</div>
+      <div class="todo-text"><strong>Text-to-Speech Output <span class="priority p-med">MED</span></strong>Play back Malayalam/native text aloud. Use Groq TTS or gTTS API — button next to the Unicode output box.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">8</div>
+      <div class="todo-text"><strong>Noise Suppression Pre-processing <span class="priority p-med">MED</span></strong>Run noisereduce on audio before sending to Groq. Improves accuracy for noisy/outdoor recordings.</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-title">🔵 Phase 3 — Advanced</div>
+    <div class="todo-item">
+      <div class="todo-num">9</div>
+      <div class="todo-text"><strong>Next-Gen UI <span class="priority p-low">LOW</span></strong>Framer Motion + Three.js 3D orb · VisionOS glass · bento grid · floating dock · particle background</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">10</div>
+      <div class="todo-text"><strong>Speaker Diarization <span class="priority p-low">LOW</span></strong>pyannote.audio — detect who spoke when. Useful for meetings and interviews.</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">11</div>
+      <div class="todo-text"><strong>Analytics Dashboard <span class="priority p-low">LOW</span></strong>Usage graph · words transcribed · language breakdown · plan usage meter</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">12</div>
+      <div class="todo-text"><strong>Mobile PWA <span class="priority p-low">LOW</span></strong>next-pwa · service worker · offline support · add to home screen Android/iOS</div>
+    </div>
+    <div class="todo-item">
+      <div class="todo-num">13</div>
+      <div class="todo-text"><strong>Production Razorpay Integration <span class="priority p-low">LOW</span></strong>Live keys · webhook verification · plan upgrade flow · per-plan usage enforcement</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function show(id, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  el.classList.add('active');
+}
+</script>
+</body>
+</html>

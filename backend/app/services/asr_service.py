@@ -65,7 +65,7 @@ def _sarvam_transcribe(wav_bytes, lang):
             'https://api.sarvam.ai/speech-to-text',
             headers={'api-subscription-key': SARVAM_KEY},
             files={'file': ('audio.wav', wav_bytes, 'audio/wav')},
-            data={'language_code': lang_code, 'model': 'saarika:v2.5'},
+            data={'language_code': lang_code, 'model': 'saaras:v3'},
             timeout=30)
         if resp.status_code == 200:
             result = resp.json().get('transcript', '')
@@ -130,4 +130,5 @@ def transcribe_audio_stream(audio_input, style='standard', source_lang='ml'):
     except Exception as e:
         print(f'[ASR] Stream Error: {e}')
         yield {'type':'error','error':str(e)}
+
 

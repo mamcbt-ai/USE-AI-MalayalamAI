@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Malayalam Voice AI — SaaS Project Report — May 31, 2026</title>
+<style>
+  :root {
+    --blue: #1F4E79; --mblue: #2E75B6; --accent: #2980B9;
+    --green: #1A7A4A; --lgreen: #D5F5E3;
+    --orange: #C65D00; --lorange: #FDEBD0;
+    --red: #C0392B; --lred: #FADBD8;
+    --grey: #666; --lgrey: #F4F6F7;
+    --lblue: #D6E4F0; --white: #fff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 14px; color: #222; background: #f9f9f9; line-height: 1.6; }
+  .page { max-width: 960px; margin: 0 auto; background: white; padding: 0; }
+
+  /* Cover */
+  .cover { background: linear-gradient(135deg, #1F4E79 0%, #2E75B6 100%); color: white; padding: 80px 60px 60px; text-align: center; }
+  .cover h1 { font-size: 52px; font-weight: 900; margin-bottom: 12px; }
+  .cover h2 { font-size: 22px; font-weight: 400; opacity: 0.9; margin-bottom: 8px; }
+  .cover .date { font-size: 16px; opacity: 0.7; margin-bottom: 40px; }
+  .cover-badges { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-bottom: 32px; }
+  .cover-badge { background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3); border-radius: 10px; padding: 14px 20px; min-width: 180px; }
+  .cover-badge .label { font-size: 13px; opacity: 0.8; margin-bottom: 4px; }
+  .cover-badge .status { font-size: 18px; font-weight: 800; }
+  .status-live { color: #7FE8A0; }
+  .status-working { color: #7FE8A0; }
+  .status-pending { color: #FFD580; }
+  .cover-meta { font-size: 13px; opacity: 0.7; }
+  .cover-url { font-size: 16px; font-weight: 600; color: #7FE8A0; margin-bottom: 8px; }
+
+  /* Content area */
+  .content { padding: 40px 60px; }
+
+  /* Section headings */
+  h2.sec { font-size: 22px; color: var(--blue); border-bottom: 3px solid var(--mblue); padding-bottom: 8px; margin: 40px 0 20px; }
+  h3.sub { font-size: 17px; color: var(--mblue); margin: 24px 0 12px; }
+  h4.subsub { font-size: 15px; color: var(--accent); margin: 16px 0 8px; font-weight: 700; }
+
+  p { margin: 10px 0; color: #333; }
+
+  ul.bul { list-style: none; padding: 0; margin: 8px 0 16px 0; }
+  ul.bul li { padding: 4px 0 4px 20px; position: relative; color: #333; }
+  ul.bul li::before { content: "•"; position: absolute; left: 4px; color: var(--mblue); font-weight: bold; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  th { background: var(--blue); color: white; padding: 10px 12px; text-align: left; font-size: 13px; }
+  td { padding: 9px 12px; border: 1px solid #ddd; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+
+  /* Info table (2-col key/value) */
+  .info-table td:first-child { background: var(--lblue); color: var(--blue); font-weight: 700; width: 30%; }
+  .info-table td:last-child { color: #333; }
+  .info-table td.hl { background: var(--lgreen); }
+
+  /* Status table */
+  .status-table .st-live    { background: var(--lgreen); color: var(--green); font-weight: 800; text-align: center; }
+  .status-table .st-working { background: var(--lgreen); color: var(--green); font-weight: 800; text-align: center; }
+  .status-table .st-pending { background: var(--lorange); color: var(--orange); font-weight: 800; text-align: center; }
+  .status-table .st-urgent  { background: var(--lred); color: var(--red); font-weight: 800; text-align: center; }
+  .status-table .st-inprog  { background: var(--lblue); color: var(--mblue); font-weight: 800; text-align: center; }
+  .status-table .st-enf     { background: var(--lgreen); color: var(--green); font-weight: 800; text-align: center; }
+  .status-table .st-active  { background: var(--lgreen); color: var(--green); font-weight: 800; text-align: center; }
+
+  /* Issue table */
+  .issue-fixed { background: var(--lgreen); color: var(--green); font-weight: 800; text-align: center; }
+  .issue-open  { background: var(--lred); color: var(--red); font-weight: 800; text-align: center; }
+
+  /* Task table */
+  .pri-critical { background: var(--lred); color: var(--red); font-weight: 800; text-align: center; }
+  .pri-high     { background: var(--lorange); color: var(--orange); font-weight: 800; text-align: center; }
+  .pri-medium   { background: var(--lblue); color: var(--mblue); font-weight: 800; text-align: center; }
+  .pri-low      { background: #f4f4f4; color: #777; font-weight: 600; text-align: center; }
+
+  /* Milestone */
+  .ms-date { background: var(--lblue); color: var(--blue); font-weight: 700; }
+  .ms-label { background: var(--lgreen); color: var(--green); font-weight: 700; }
+
+  /* Proxy flow */
+  .flow-box { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 20px 0; flex-wrap: wrap; }
+  .flow-node { padding: 14px 20px; border-radius: 8px; font-weight: 700; font-size: 14px; text-align: center; }
+  .flow-arrow { font-size: 22px; color: var(--mblue); font-weight: 900; }
+  .fn-user   { background: var(--lblue); color: var(--blue); border: 2px solid var(--mblue); }
+  .fn-vercel { background: var(--lgreen); color: var(--green); border: 2px solid var(--green); }
+  .fn-rail   { background: var(--lgrey); color: #333; border: 2px solid #aaa; }
+
+  /* Section divider */
+  .sec-divider { border: none; border-top: 1px solid #ddd; margin: 40px 0; }
+
+  /* Footer */
+  .report-footer { background: var(--blue); color: rgba(255,255,255,0.8); text-align: center; padding: 24px; font-size: 13px; margin-top: 40px; }
+  .report-footer a { color: #7FE8A0; }
+
+  /* Alert boxes */
+  .alert-urgent { background: var(--lred); border-left: 4px solid var(--red); padding: 12px 16px; border-radius: 4px; margin: 12px 0; font-weight: 600; color: var(--red); }
+  .alert-info   { background: var(--lblue); border-left: 4px solid var(--mblue); padding: 12px 16px; border-radius: 4px; margin: 12px 0; color: var(--blue); }
+
+  @media print { .page { box-shadow: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- COVER -->
+<div class="cover">
+  <h1>Malayalam Voice AI</h1>
+  <h2>SaaS Project — Full Progress Report</h2>
+  <p class="date">May 31, 2026</p>
+  <div class="cover-badges">
+    <div class="cover-badge"><div class="label">Backend</div><div class="status status-live">LIVE</div></div>
+    <div class="cover-badge"><div class="label">Frontend</div><div class="status status-live">LIVE</div></div>
+    <div class="cover-badge"><div class="label">Payments</div><div class="status status-working">WORKING</div></div>
+    <div class="cover-badge"><div class="label">Live Keys</div><div class="status status-pending">PENDING</div></div>
+  </div>
+  <div class="cover-url">malayalam-ai-frontend.vercel.app</div>
+  <div class="cover-meta">Prepared by: Muhammed Asarudheen M &nbsp;|&nbsp; mamcbt@gmail.com</div>
+</div>
+
+<div class="content">
+
+<!-- 1. PROJECT OVERVIEW -->
+<h2 class="sec">1. Project Overview and History</h2>
+<h3 class="sub">1.1 Description, Purpose and Target Users</h3>
+<p>Malayalam Voice AI is a cloud-based speech-to-text SaaS application that converts spoken South Indian language audio into instant English translations. The service addresses a real need: millions of Malayalam, Tamil, Telugu, Kannada, and Hindi speakers who struggle to produce English written content from verbal communication.</p>
+
+<h4 class="subsub">Target Users</h4>
+<ul class="bul">
+  <li>Kerala and South Indian professionals needing quick English documentation from regional language speech</li>
+  <li>Students who think and communicate verbally in their native language</li>
+  <li>Content creators translating regional audio for wider English-speaking audiences</li>
+  <li>Businesses operating across South India requiring multilingual transcription</li>
+</ul>
+
+<h4 class="subsub">Supported Input Languages</h4>
+<ul class="bul">
+  <li>Malayalam (primary) &nbsp;|&nbsp; Tamil &nbsp;|&nbsp; Telugu &nbsp;|&nbsp; Kannada &nbsp;|&nbsp; Hindi</li>
+</ul>
+
+<h4 class="subsub">Key Features</h4>
+<ul class="bul">
+  <li>Real-time streaming speech-to-text — results appear word by word as audio is processed</li>
+  <li>Dual output: English translation + native Unicode script (e.g. Malayalam: നമസ്കാരം)</li>
+  <li>11 translation styles: Standard, Formal, Casual, News, Literary, Business, Academic, Simple, Humorous, Emotional, Bullet Points</li>
+  <li>Subscription plans with enforced daily limits: Free, Basic, Pro, Premium</li>
+  <li>Hallucination detection and filtering — repeated characters and stock phrases auto-removed</li>
+  <li>Works in any mobile or desktop browser — no app download required</li>
+</ul>
+
+<h3 class="sub">1.2 Key Milestones</h3>
+<table>
+  <thead><tr><th>Date</th><th>Milestone</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td class="ms-date">May 8, 2026</td><td class="ms-label">Project Start</td><td>Repository created. FastAPI backend + Next.js frontend scaffolded.</td></tr>
+    <tr><td class="ms-date">May 15, 2026</td><td class="ms-label">Backend MVP</td><td>FastAPI with local Whisper model (small, CPU), user auth, PostgreSQL, audio API deployed on Railway.</td></tr>
+    <tr><td class="ms-date">May 22, 2026</td><td class="ms-label">Whisper Integration</td><td>faster-whisper with VAD, beam search, dual-pass: translate to English + native script transcription.</td></tr>
+    <tr><td class="ms-date">May 27, 2026</td><td class="ms-label">Phase 9 Complete</td><td>Analytics, i18n, RBAC, 25 unit tests passing, CI/CD via GitHub Actions, Supabase integration.</td></tr>
+    <tr><td class="ms-date">May 31, 2026</td><td class="ms-label">Frontend Live</td><td>Next.js deployed to Vercel: malayalam-ai-frontend.vercel.app — permanent public URL.</td></tr>
+    <tr><td class="ms-date">May 31, 2026</td><td class="ms-label">Payment Integration</td><td>Razorpay integrated end-to-end. Test payment Rs.99 completed successfully via Netbanking 10:30 AM.</td></tr>
+    <tr><td class="ms-date">May 31, 2026</td><td class="ms-label">5-Language Support</td><td>All 5 languages (ml/ta/te/kn/hi) wired. source_lang passed from frontend → backend → Whisper.</td></tr>
+    <tr><td class="ms-date">May 31, 2026</td><td class="ms-label">Network Fix</td><td>ISP blocking of *.railway.app resolved via Vercel proxy (next.config.js rewrites).</td></tr>
+  </tbody>
+</table>
+
+<hr class="sec-divider">
+
+<!-- 2. ACCOUNTS -->
+<h2 class="sec">2. Accounts and Services Used</h2>
+
+<div class="alert-urgent">⚠️ URGENT: Vercel Pro Trial expires in 3 days (June 3, 2026). Add payment card and downgrade to Hobby (free) immediately to prevent service disruption.</div>
+
+<h3 class="sub">2.1 Railway — Backend Hosting</h3>
+<table class="info-table"><tbody>
+  <tr><td>Provider</td><td>Railway (railway.app)</td></tr>
+  <tr><td>Account</td><td>cozy-magic (production environment)</td></tr>
+  <tr><td>Purpose</td><td>Hosts FastAPI Python backend with WhisperX speech model and PostgreSQL database</td></tr>
+  <tr><td>Backend URL</td><td class="hl">use-ai-malayalamai-production-ee70.up.railway.app</td></tr>
+  <tr><td>Region / Specs</td><td>US West | 1 Replica | Python 3.13</td></tr>
+  <tr><td>Status</td><td>Active — Paid plan (cozy-magic)</td></tr>
+  <tr><td>Database</td><td>PostgreSQL add-on (Railway managed)</td></tr>
+</tbody></table>
+
+<h3 class="sub">2.2 Vercel — Frontend Hosting</h3>
+<table class="info-table"><tbody>
+  <tr><td>Provider</td><td>Vercel (vercel.com)</td></tr>
+  <tr><td>Account</td><td>hodophile</td></tr>
+  <tr><td>Purpose</td><td>Hosts Next.js frontend AND proxies API requests to Railway (bypasses ISP DNS blocks)</td></tr>
+  <tr><td>Live URL</td><td class="hl">malayalam-ai-frontend.vercel.app</td></tr>
+  <tr><td>Status</td><td style="color:var(--red);font-weight:700">Pro Trial — EXPIRES IN 3 DAYS — Add card and downgrade to Hobby immediately</td></tr>
+</tbody></table>
+
+<h3 class="sub">2.3 GitHub — Source Control</h3>
+<table class="info-table"><tbody>
+  <tr><td>Repository</td><td>mamcbt-ai/USE-AI-MalayalamAI</td></tr>
+  <tr><td>Purpose</td><td>Version control. Railway auto-deploys on every push to master branch.</td></tr>
+  <tr><td>Status</td><td>Active — Free tier | Branch: master (production)</td></tr>
+</tbody></table>
+
+<h3 class="sub">2.4 Razorpay — Payment Gateway</h3>
+<table class="info-table"><tbody>
+  <tr><td>Provider</td><td>Razorpay (razorpay.com)</td></tr>
+  <tr><td>Account</td><td>Muhammed Asarudheen M — mamcbt@gmail.com</td></tr>
+  <tr><td>Purpose</td><td>Payment processing for Basic (Rs.99), Pro (Rs.249), Premium (Rs.499) monthly subscriptions</td></tr>
+  <tr><td>Test Mode</td><td class="hl">ACTIVE — Test payment Rs.99 completed successfully on May 31, 2026 (Netbanking)</td></tr>
+  <tr><td>Live Mode</td><td>PENDING — Website submitted for Razorpay scan, approval 24-48h</td></tr>
+  <tr><td>KYC</td><td>Business details submitted — Unregistered business type</td></tr>
+</tbody></table>
+
+<h3 class="sub">2.5 AI Services</h3>
+<table class="info-table"><tbody>
+  <tr><td>Groq API</td><td>Whisper transcription API + Llama LLM. GROQ_API_KEY active in Railway as fallback.</td></tr>
+  <tr><td>Anthropic</td><td>Was used for Malayalam translation. Replaced by Groq (Railway network blocked anthropic.com). Keys present but inactive.</td></tr>
+</tbody></table>
+
+<hr class="sec-divider">
+
+<!-- 3. API KEYS -->
+<h2 class="sec">3. API Keys, Credentials and Integrations</h2>
+<table>
+  <thead><tr><th>Service</th><th>Environment</th><th>Variable Name(s)</th><th>Stored In</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Razorpay</strong></td><td>Test/Sandbox</td><td>RAZORPAY_KEY_ID<br>RAZORPAY_KEY_SECRET</td><td>Railway Variables</td><td style="color:var(--green);font-weight:700">Working (test mode)</td></tr>
+    <tr><td><strong>PostgreSQL</strong></td><td>Production</td><td>DATABASE_URL</td><td>Railway Variables</td><td style="color:var(--green);font-weight:700">Active & live</td></tr>
+    <tr><td><strong>Groq</strong></td><td>Production</td><td>GROQ_API_KEY</td><td>Railway Variables</td><td>Active (fallback)</td></tr>
+    <tr><td><strong>Anthropic</strong></td><td>Production</td><td>ANTHROPIC_API_KEY<br>CLAUDE_API_KEY</td><td>Railway Variables</td><td>Present, unused</td></tr>
+  </tbody>
+</table>
+
+<h3 class="sub">Security Measures</h3>
+<ul class="bul">
+  <li>All API keys stored exclusively in Railway Environment Variables — never committed to GitHub repository</li>
+  <li>Railway Variables are masked (shown as ******* in the dashboard)</li>
+  <li>Razorpay payment signature verified server-side using HMAC-SHA256 before any plan upgrade</li>
+  <li>JWT Bearer tokens for authentication — verified on every protected endpoint</li>
+  <li>CORS: only <strong>malayalam-ai-frontend.vercel.app</strong> and localhost:3000 are whitelisted origins</li>
+  <li>Passwords hashed using bcrypt via passlib — never stored in plain text</li>
+</ul>
+
+<hr class="sec-divider">
+
+<!-- 4. TECHNICAL SETUP -->
+<h2 class="sec">4. Technical Setup and Deployments</h2>
+
+<h3 class="sub">4.1 Backend Stack</h3>
+<table class="info-table"><tbody>
+  <tr><td>Framework</td><td>FastAPI (Python 3.13)</td></tr>
+  <tr><td>Speech-to-Text</td><td>faster-whisper (Whisper small, CPU, int8 quantization)</td></tr>
+  <tr><td>Audio Processing</td><td>ffmpeg, PyAV, soundfile — decodes WebM/Opus from browser MediaRecorder</td></tr>
+  <tr><td>Database ORM</td><td>SQLModel (SQLAlchemy + Pydantic)</td></tr>
+  <tr><td>Database</td><td>PostgreSQL (Railway managed add-on)</td></tr>
+  <tr><td>Authentication</td><td>JWT Bearer tokens (OAuth2PasswordBearer), bcrypt password hashing</td></tr>
+  <tr><td>Rate Limiting</td><td>SlowAPI middleware — 20 requests/minute per IP</td></tr>
+  <tr><td>Payment</td><td>Razorpay Python SDK</td></tr>
+  <tr><td>Deployment</td><td>Railway (Docker container, auto-deploy on GitHub master push)</td></tr>
+  <tr><td>Backend URL</td><td class="hl">use-ai-malayalamai-production-ee70.up.railway.app</td></tr>
+</tbody></table>
+
+<h4 class="subsub">API Endpoints</h4>
+<ul class="bul">
+  <li>POST /auth/register — User registration with hashed password</li>
+  <li>POST /auth/login — Returns JWT access token</li>
+  <li>POST /audio/process — Non-streaming transcription</li>
+  <li>POST /audio/process-stream — Streaming SSE (Server-Sent Events) live transcription</li>
+  <li>GET  /payment/plans — List subscription plans (public)</li>
+  <li>POST /payment/create-order — Create Razorpay order (auth required)</li>
+  <li>POST /payment/verify — Verify payment signature and upgrade plan (auth required)</li>
+  <li>GET  /payment/my-plan — Get current user plan (auth required)</li>
+</ul>
+
+<h3 class="sub">4.2 Frontend Stack</h3>
+<table class="info-table"><tbody>
+  <tr><td>Framework</td><td>Next.js 16.2.6 (App Router, Turbopack)</td></tr>
+  <tr><td>Language</td><td>JavaScript (JSX)</td></tr>
+  <tr><td>Styling</td><td>Tailwind CSS + inline styles</td></tr>
+  <tr><td>Deployment</td><td>Vercel (auto-deploy from GitHub)</td></tr>
+  <tr><td>Live URL</td><td class="hl">malayalam-ai-frontend.vercel.app</td></tr>
+  <tr><td>Proxy Config</td><td>next.config.js rewrites: /api/* → Railway backend (server-side, bypasses ISP blocks)</td></tr>
+  <tr><td>Payment UI</td><td>Razorpay checkout.js embedded widget (loaded from Razorpay CDN)</td></tr>
+</tbody></table>
+
+<h3 class="sub">4.3 Proxy Architecture — ISP Block Solution</h3>
+<p>Several Indian ISPs (Airtel, BSNL, Jio home routers) block <code>*.railway.app</code> domains at the DNS level. Solution: Vercel acts as a transparent server-side proxy.</p>
+
+<div class="flow-box">
+  <div class="flow-node fn-user">User Browser / Mobile</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node fn-vercel">Vercel (vercel.app)<br><small>Same domain as frontend</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node fn-rail">Railway Backend<br><small>Server-to-server</small></div>
+</div>
+<p>All API calls use <code>/api/*</code> (relative path on Vercel). Next.js rewrites route them server-side to Railway. User devices never contact Railway directly — ISP blocking is permanently bypassed.</p>
+
+<h3 class="sub">4.4 Usage Limits Implementation</h3>
+<table class="info-table"><tbody>
+  <tr><td>Logic Location</td><td>Backend — app/routers/audio.py — check_usage_limit() function</td></tr>
+  <tr><td>Method</td><td>Counts AudioRecord DB entries for current user on today's date</td></tr>
+  <tr><td>Free Plan</td><td>10 recordings per day</td></tr>
+  <tr><td>Basic (Rs.99)</td><td>50 recordings per day — 30 days validity</td></tr>
+  <tr><td>Pro (Rs.249)</td><td>200 recordings per day — 30 days validity</td></tr>
+  <tr><td>Premium (Rs.499)</td><td class="hl">Unlimited recordings — 30 days validity</td></tr>
+  <tr><td>Plan Expiry</td><td>Paid plans auto-revert to Free on expiry (checked at each request)</td></tr>
+  <tr><td>HTTP Response</td><td>HTTP 429 Too Many Requests with X-Plan and X-Limit headers</td></tr>
+  <tr><td>DB Fields</td><td>User: plan (str), plan_expires_at (datetime), daily_limit (int)</td></tr>
+</tbody></table>
+
+<hr class="sec-divider">
+
+<!-- 5. CURRENT STATUS -->
+<h2 class="sec">5. Current Status and Progress</h2>
+<table class="status-table">
+  <thead><tr><th>Component</th><th>Status</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Backend on Railway</strong></td><td class="st-live">LIVE</td><td>Commit ac3de90a — Whisper loaded, DB init OK, Uvicorn running port 8000</td></tr>
+    <tr><td><strong>Frontend on Vercel</strong></td><td class="st-live">LIVE</td><td>malayalam-ai-frontend.vercel.app — globally accessible via Vercel proxy</td></tr>
+    <tr><td><strong>Vercel Proxy</strong></td><td class="st-active">ACTIVE</td><td>next.config.js rewrites /api/* to Railway — ISP blocking permanently resolved</td></tr>
+    <tr><td><strong>Payment Integration</strong></td><td class="st-working">WORKING</td><td>Test payment Rs.99 completed — Netbanking, May 31 2026 at 10:30 AM</td></tr>
+    <tr><td><strong>Usage Limits</strong></td><td class="st-enf">ENFORCED</td><td>Free=10, Basic=50, Pro=200, Premium=unlimited per day</td></tr>
+    <tr><td><strong>5-Language ASR</strong></td><td class="st-live">LIVE</td><td>ml/ta/te/kn/hi — source_lang passed from frontend to Whisper model</td></tr>
+    <tr><td><strong>Razorpay Test Mode</strong></td><td class="st-working">WORKING</td><td>Full flow: order → checkout → verify → plan upgrade in database</td></tr>
+    <tr><td><strong>Razorpay Live Mode</strong></td><td class="st-pending">PENDING</td><td>Website submitted for scan — Razorpay approval pending (24-48h)</td></tr>
+    <tr><td><strong>Live Keys in Railway</strong></td><td class="st-pending">WAITING</td><td>Will be added immediately after Razorpay approval email received</td></tr>
+    <tr><td><strong>Vercel Billing</strong></td><td class="st-urgent">URGENT</td><td>Pro Trial expires in 3 days — add card and downgrade to Hobby (free) NOW</td></tr>
+    <tr><td><strong>User Acquisition</strong></td><td class="st-inprog">IN PROGRESS</td><td>App shared with first users — proxy fix resolved mobile access issues</td></tr>
+  </tbody>
+</table>
+
+<hr class="sec-divider">
+
+<!-- 6. ISSUES -->
+<h2 class="sec">6. Issues Faced and Actions Taken</h2>
+<table>
+  <thead><tr><th>Issue</th><th>Investigation</th><th>Action Taken</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>Anthropic Claude API auth failed — key not recognized on Railway</td><td>Railway logs: 'Could not resolve authentication method'</td><td>Migrated to Groq Llama (llama-3.1-8b-instant) using existing GROQ_API_KEY</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>Railway network blocked api.anthropic.com</td><td>Deploy logs: Connection error on every Claude API call</td><td>Full migration to Groq API for both ASR and LLM translation steps</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>Malayalam hallucinations — repeated characters in output</td><td>User testing showed long repeated char strings</td><td>Added _is_hallucination() checking if >60% of chars are same character</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>Settings object missing RAZORPAY_KEY_ID — startup crash</td><td>Railway crash: AttributeError on Settings.RAZORPAY_KEY_ID</td><td>Changed payment.py to use os.environ.get() directly</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>HTTP 422 on /payment/create-order — Pydantic schema mismatch</td><td>Browser: 422; backend expected 'plan', frontend sent 'plan_id'</td><td>Updated CreateOrderRequest to use plan_id; aligned frontend to match</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>NameError: client — wrong variable name in payment.py</td><td>RuntimeError on payment; variable is rzp_client not client</td><td>Fixed all references from client. to rzp_client.</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>IndentationError in asr_service.py after regex edits</td><td>Railway crash: SyntaxError expected 'except' block at line 121</td><td>Rewrote entire asr_service.py from scratch with correct indentation</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>ISP DNS block — DNS_PROBE_FINISHED_NXDOMAIN on railway.app</td><td>User's Airtel mobile and WiFi router could not resolve railway.app</td><td>Implemented Vercel proxy via next.config.js rewrites</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>daily_limit NOT NULL constraint violation on registration</td><td>Railway: psycopg2 IntegrityError — null value in daily_limit column</td><td>Added startup migration: SET DEFAULT 10; UPDATE WHERE NULL</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>CORS blocked — wildcard + allow_credentials=True is invalid</td><td>Browsers reject responses per CORS spec (wildcard + credentials)</td><td>Changed to explicit origin list: vercel.app and localhost:3000</td><td class="issue-fixed">Fixed</td></tr>
+    <tr><td>Vercel Pro Trial expiring — service disruption risk</td><td>Vercel dashboard warning: Pro Trial expires June 3, 2026</td><td>Must add card and downgrade to Hobby free tier immediately</td><td class="issue-open">Open</td></tr>
+  </tbody>
+</table>
+
+<hr class="sec-divider">
+
+<!-- 7. REMAINING TASKS -->
+<h2 class="sec">7. Remaining Tasks and Next Steps</h2>
+<table>
+  <thead><tr><th>Task</th><th>Priority</th><th>Dependency</th><th>Target Date</th></tr></thead>
+  <tbody>
+    <tr><td>Fix Vercel billing — add card, downgrade to Hobby (free)</td><td class="pri-critical">CRITICAL</td><td>None — do today</td><td><strong>Today</strong></td></tr>
+    <tr><td>Razorpay website scan and approval</td><td class="pri-high">HIGH</td><td>Submitted — awaiting Razorpay email</td><td>24-48 hours</td></tr>
+    <tr><td>Add Razorpay live keys to Railway Variables</td><td class="pri-high">HIGH</td><td>Razorpay approval email received</td><td>After above</td></tr>
+    <tr><td>Run final live payment smoke test (real Rs.99 payment)</td><td class="pri-high">HIGH</td><td>Live keys added to Railway</td><td>After above</td></tr>
+    <tr><td>Share app with 50+ users via WhatsApp and Facebook groups</td><td class="pri-high">HIGH</td><td>None — start now with free tier</td><td>This week</td></tr>
+    <tr><td>Add usage counter UI — show recordings left today</td><td class="pri-medium">MEDIUM</td><td>None</td><td>Next session</td></tr>
+    <tr><td>Email notification on successful payment</td><td class="pri-medium">MEDIUM</td><td>Email service (SendGrid/Mailgun)</td><td>Week 2</td></tr>
+    <tr><td>Add analytics — Google Analytics or Plausible.io</td><td class="pri-medium">MEDIUM</td><td>None</td><td>Week 2</td></tr>
+    <tr><td>Add error tracking — Sentry integration</td><td class="pri-medium">MEDIUM</td><td>None</td><td>Week 2</td></tr>
+    <tr><td>Custom domain (e.g. malayalamvoiceai.in — Rs.99/year)</td><td class="pri-low">LOW</td><td>Domain purchase required</td><td>Week 3</td></tr>
+    <tr><td>Upgrade to Whisper medium model for better accuracy</td><td class="pri-low">LOW</td><td>Railway GPU plan upgrade needed</td><td>Month 2</td></tr>
+    <tr><td>Admin dashboard — user list, revenue, usage metrics</td><td class="pri-low">LOW</td><td>None</td><td>Month 2</td></tr>
+  </tbody>
+</table>
+
+<hr class="sec-divider">
+
+<!-- 8. ADDITIONAL NOTES -->
+<h2 class="sec">8. Additional Technical Notes</h2>
+
+<h3 class="sub">8.1 Revenue Model</h3>
+<table class="info-table"><tbody>
+  <tr><td>Free Plan</td><td>Rs.0/month — 10 recordings/day — User acquisition funnel</td></tr>
+  <tr><td>Basic Plan</td><td>Rs.99/month — 50 recordings/day</td></tr>
+  <tr><td>Pro Plan</td><td>Rs.249/month — 200 recordings/day</td></tr>
+  <tr><td>Premium Plan</td><td class="hl">Rs.499/month — Unlimited recordings</td></tr>
+  <tr><td>10 paid users</td><td>Rs.990 – Rs.4,990/month (depending on plan mix)</td></tr>
+  <tr><td>100 paid users</td><td>Rs.9,900 – Rs.49,900/month</td></tr>
+  <tr><td>Settlement</td><td>Razorpay settles to bank account within 3 business days (live mode)</td></tr>
+</tbody></table>
+
+<h3 class="sub">8.2 Backup and Data Retention</h3>
+<ul class="bul">
+  <li>PostgreSQL: Railway provides automatic daily backups on paid plans</li>
+  <li>Source code: Full git history in GitHub — mamcbt-ai/USE-AI-MalayalamAI</li>
+  <li>User audio: NOT stored — processed in-memory, immediately discarded after transcription</li>
+  <li>User PII stored: email (hashed), plan info, recording count — minimal data footprint</li>
+</ul>
+
+<h3 class="sub">8.3 Monitoring and Logging</h3>
+<ul class="bul">
+  <li>Railway Dashboard: real-time deploy logs, HTTP access logs, network flow logs</li>
+  <li>Application logs: transcription results, hallucination detections, payment call logs</li>
+  <li>Razorpay Dashboard: full transaction history for test and live payments</li>
+  <li><strong>Recommended:</strong> Add Sentry (sentry.io) for automatic error tracking and alerting</li>
+  <li><strong>Recommended:</strong> Add Plausible.io or Google Analytics for user behavior insights</li>
+</ul>
+
+<h3 class="sub">8.4 Scalability Considerations</h3>
+<ul class="bul">
+  <li>Current: Whisper small on CPU — handles 5-10 concurrent users comfortably</li>
+  <li>High traffic: Upgrade to Railway GPU plan + Whisper medium/large model</li>
+  <li>Database: PostgreSQL managed by Railway — scales with Railway plan</li>
+  <li>Frontend: Vercel CDN scales infinitely — no action needed</li>
+  <li>Rate limiting: 20 req/min per IP — adjust as real traffic grows</li>
+</ul>
+
+<h3 class="sub">8.5 Security Checklist</h3>
+<ul class="bul">
+  <li>✅ Passwords: bcrypt-hashed via passlib — never stored in plain text</li>
+  <li>✅ Auth: JWT tokens — short-lived, verified on every protected endpoint</li>
+  <li>✅ Payments: Razorpay HMAC-SHA256 signature verified server-side</li>
+  <li>✅ Secrets: All in Railway Environment Variables — confirmed absent from git history</li>
+  <li>✅ SQL: Parameterized queries via SQLModel — SQL injection prevented</li>
+  <li>✅ CORS: Strict origin whitelist — only Vercel domain and localhost</li>
+  <li>⬜ Recommended: Add rate limiting per authenticated user (not just per IP)</li>
+  <li>⬜ Recommended: Add Sentry for runtime error monitoring</li>
+</ul>
+
+</div><!-- /content -->
+
+<div class="report-footer">
+  <strong>Malayalam Voice AI</strong> &nbsp;|&nbsp; SaaS Project Report &nbsp;|&nbsp; May 31, 2026<br>
+  Prepared by Muhammed Asarudheen M &nbsp;|&nbsp; mamcbt@gmail.com<br>
+  Live at: <a href="https://malayalam-ai-frontend.vercel.app">malayalam-ai-frontend.vercel.app</a>
+</div>
+
+</div><!-- /page -->
+</body>
+</html>
