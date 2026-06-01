@@ -150,8 +150,8 @@ async def process_audio(
 ):
     check_usage_limit(current_user)
 
-    audio = await _decode_audio_to_numpy(file)
-    asr_result = transcribe_audio(audio, style=style, source_lang=lang)
+    raw_bytes = await file.read()
+    asr_result = transcribe_audio(raw_bytes, style=style, source_lang=lang)
 
     english_text = asr_result.get("text", "").strip()
     malayalam_text = asr_result.get("malayalam_text", "").strip()
@@ -194,8 +194,9 @@ async def process_audio_stream(
     """
     check_usage_limit(current_user)
 
-    audio = await _decode_audio_to_numpy(file)
-    filename = file.filename or "recording.webm"
+    raw_bytes = await file.read()
+    filename = file.filename
+    audio = None or "recording.webm"
 
     async def event_generator():
         yield f"data: {json.dumps({'type': 'status', 'message': 'Audio received - starting transcription...'})}\n\n"
@@ -206,7 +207,7 @@ async def process_audio_stream(
         def _run_whisper():
             """Run Whisper synchronously in a thread; push each segment to the async queue."""
             try:
-                for seg in transcribe_audio_stream(audio, style=style, source_lang=lang):
+                for seg in transcribe_audio_stream(raw_bytes, style=style, source_lang=lang):
                     asyncio.run_coroutine_threadsafe(seg_queue.put(seg), loop)
             except Exception as exc:
                 asyncio.run_coroutine_threadsafe(
