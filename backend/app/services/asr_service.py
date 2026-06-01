@@ -150,8 +150,12 @@ def _sarvam_call(wav_bytes: bytes, lang: str, mode: str) -> str:
         print(f"[ASR] Sarvam {mode} error: {e}"); return ""
 
 def _groq_fallback(wav_bytes: bytes, lang: str) -> str:
+    client = _get_groq()
+    if client is None:
+        print("[ASR] Groq fallback skipped: GROQ_API_KEY missing")
+        return ""
     try:
-        result = _get_groq().audio.transcriptions.create(
+        result = client.audio.transcriptions.create(
             file=("audio.wav", wav_bytes), model=GROQ_MODEL, language=lang,
             response_format="text",
             prompt=f"This is {LANG_NAMES.get(lang,lang)} speech. Return accurate transcript in original language/script. Preserve slang, names, numbers.",
@@ -194,6 +198,10 @@ def _select_best_native(wav_bytes: bytes, lang: str) -> Tuple[str, str]:
 
 def _translate_to_english(native_text: str, lang: str) -> str:
     if not native_text: return ""
+    client = _get_groq()
+    if client is None:
+        print("[ASR] Translation skipped: GROQ_API_KEY missing")
+        return ""
     lang_name = LANG_NAMES.get(lang, lang)
     system = (
         f"You are an expert {lang_name}-to-English translator. "
@@ -201,7 +209,7 @@ def _translate_to_english(native_text: str, lang: str) -> str:
         "Do not summarize. Output only English."
     )
     try:
-        r = _get_groq().chat.completions.create(
+        r = client.chat.completions.create(
             model=TRANSLATION_MODEL,
             messages=[{"role":"system","content":system},{"role":"user","content":native_text}],
             max_tokens=512, temperature=0.0,
