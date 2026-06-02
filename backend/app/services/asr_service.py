@@ -86,16 +86,17 @@ def is_hallucination(text: str) -> bool:
 
 
 def has_expected_script(text: str, lang: str) -> bool:
-    """Return True only if text contains characters from the expected Unicode script."""
+    """
+    Return True if text contains at least some characters from the expected script.
+    Relaxed: only reject if there are ZERO native chars (not based on ratio).
+    """
     if not text:
         return False
     pattern = SCRIPT_PATTERNS.get(lang)
     if not pattern:
-        return True  # Hindi and others — fall back to accepting
+        return True  # unknown lang — accept
     script_chars = len(re.findall(pattern, text))
-    latin_chars  = len(re.findall(r"[A-Za-z]", text))
-    # Require at least one native char AND more native than Latin
-    return script_chars > 0 and script_chars >= latin_chars
+    return script_chars > 0  # accept as long as ANY native char is present
 
 
 # ── Audio helpers ─────────────────────────────────────────────────────────────
@@ -232,24 +233,45 @@ def groq_translate_english(wav_bytes: bytes, source_lang: str) -> str:
 def transcribe_audio(audio_input: Any, style: str = "standard", source_lang: str = "ml") -> Dict[str, Any]:
     """
     Transcribe audio and return stable language-neutral dict.
-    Always returns: english_text, native_text, source_lang, source_language_name
+    Returns: english_text, native_text, native_text_raw, source_lang, source_language_name
     """
+    # Validate language
+    if source_lang not in LANGUAGE_NAMES:
+        return {
+            "status": "failed", "error": f"Unsupported language: {source_lang}",
+            "english_text": "", "native_text": "", "native_text_raw": "",
+            "source_lang": source_lang, "source_language_name": source_lang,
+            "style": style, "segments": [], "device": DEVICE, "model": WHISPER_MODEL,
+        }
+
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
     try:
         wav_bytes = to_wav_bytes(audio_input)
         print(f"ASR: lang={source_lang}, style={style}, bytes={len(wav_bytes)}")
 
-        native_text  = groq_transcribe_native(wav_bytes, source_lang)
-        english_text = groq_translate_english(wav_bytes, source_lang)
+        # Minimum length: ~1 second at 16kHz 16-bit = ~32KB
+        if len(wav_bytes) < 32000:
+            return {
+                "status": "too_short",
+                "error": "Recording too short. Please speak for at least 3 seconds.",
+                "english_text": "", "native_text": "", "native_text_raw": "",
+                "source_lang": source_lang, "source_language_name": lang_name,
+                "style": style, "segments": [], "device": DEVICE, "model": WHISPER_MODEL,
+            }
 
-        print(f"ASR English : {english_text[:80] if english_text else '(empty)'}")
-        print(f"ASR Native  : {native_text[:80] if native_text else '(empty)'}")
+        native_text_raw = groq_transcribe_native(wav_bytes, source_lang)
+        english_text    = groq_translate_english(wav_bytes, source_lang)
+        native_text     = native_text_raw  # already filtered in groq_transcribe_native
+
+        print(f"ASR English     : {english_text[:80] if english_text else '(empty)'}")
+        print(f"ASR Native (raw): {native_text_raw[:80] if native_text_raw else '(empty)'}")
 
         return {
             "status": "success",
-            "english_text": english_text,
-            "native_text":  native_text,
-            "source_lang":  source_lang,
+            "english_text":    english_text,
+            "native_text":     native_text,
+            "native_text_raw": native_text_raw,
+            "source_lang":     source_lang,
             "source_language_name": lang_name,
             "style":    style,
             "segments": [],
