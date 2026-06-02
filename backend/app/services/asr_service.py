@@ -190,6 +190,7 @@ def _extract_text(result: Any) -> str:
 def groq_transcribe_native(raw_bytes: bytes, source_lang: str, filename: str = "audio.webm") -> str:
     """Transcribe audio in native script using Groq Whisper. Sends raw bytes directly."""
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
+    print(f"Groq native: filename={filename}, bytes={len(raw_bytes)}, lang={source_lang}")
     try:
         result = groq_client.audio.transcriptions.create(
             file=(filename, raw_bytes),
@@ -199,22 +200,20 @@ def groq_transcribe_native(raw_bytes: bytes, source_lang: str, filename: str = "
             prompt=f"This is {lang_name} speech including colloquial and slang expressions.",
         )
         text = _extract_text(result)
-        print(f"Groq native raw ({source_lang}): {text[:100]}")
+        print(f"Groq native result: '{text[:120] if text else '(empty)'}'")
         if is_hallucination(text):
             print(f"Native hallucination rejected: {text[:60]}")
             return ""
-        # Script check relaxed — log mismatch but still return text
-        if not has_expected_script(text, source_lang):
-            print(f"Native script mismatch ({source_lang}), returning anyway: {text[:60]}")
         return text
     except Exception as e:
-        print(f"Groq native transcription error: {e}")
+        print(f"Groq native ERROR: {type(e).__name__}: {e}")
         return ""
 
 
 def groq_translate_english(raw_bytes: bytes, source_lang: str, filename: str = "audio.webm") -> str:
     """Translate audio to English using Groq Whisper. Sends raw bytes directly."""
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
+    print(f"Groq translate: filename={filename}, bytes={len(raw_bytes)}")
     try:
         result = groq_client.audio.translations.create(
             file=(filename, raw_bytes),
@@ -223,12 +222,13 @@ def groq_translate_english(raw_bytes: bytes, source_lang: str, filename: str = "
             prompt=f"Translate this {lang_name} speech accurately into natural English.",
         )
         text = _extract_text(result)
+        print(f"Groq english result: '{text[:120] if text else '(empty)'}'")
         if is_hallucination(text):
             print(f"English hallucination rejected: {text[:60]}")
             return ""
         return text
     except Exception as e:
-        print(f"Groq English translation error: {e}")
+        print(f"Groq english ERROR: {type(e).__name__}: {e}")
         return ""
 
 
