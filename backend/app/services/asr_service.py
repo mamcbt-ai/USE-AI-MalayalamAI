@@ -233,7 +233,7 @@ def groq_translate_english(raw_bytes: bytes, source_lang: str, filename: str = "
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
-def transcribe_audio(audio_input: Any, style: str = "standard", source_lang: str = "ml") -> Dict[str, Any]:
+def transcribe_audio(audio_input: Any, filename: str = "recording.webm", style: str = "standard", source_lang: str = "ml") -> Dict[str, Any]:
     """
     Transcribe audio and return stable language-neutral dict.
     Returns: english_text, native_text, native_text_raw, source_lang, source_language_name
