@@ -187,12 +187,12 @@ def _extract_text(result: Any) -> str:
 
 
 # ── Groq API calls ────────────────────────────────────────────────────────────
-def groq_transcribe_native(wav_bytes: bytes, source_lang: str) -> str:
-    """Transcribe audio in native script using Groq Whisper."""
+def groq_transcribe_native(raw_bytes: bytes, source_lang: str, filename: str = "audio.webm") -> str:
+    """Transcribe audio in native script using Groq Whisper. Sends raw bytes directly."""
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
     try:
         result = groq_client.audio.transcriptions.create(
-            file=("audio.wav", wav_bytes),
+            file=(filename, raw_bytes),
             model=WHISPER_MODEL,
             language=source_lang,
             response_format="text",
@@ -212,12 +212,12 @@ def groq_transcribe_native(wav_bytes: bytes, source_lang: str) -> str:
         return ""
 
 
-def groq_translate_english(wav_bytes: bytes, source_lang: str) -> str:
-    """Translate audio to English using Groq Whisper."""
+def groq_translate_english(raw_bytes: bytes, source_lang: str, filename: str = "audio.webm") -> str:
+    """Translate audio to English using Groq Whisper. Sends raw bytes directly."""
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
     try:
         result = groq_client.audio.translations.create(
-            file=("audio.wav", wav_bytes),
+            file=(filename, raw_bytes),
             model=WHISPER_MODEL,
             response_format="text",
             prompt=f"Translate this {lang_name} speech accurately into natural English.",
@@ -249,11 +249,20 @@ def transcribe_audio(audio_input: Any, style: str = "standard", source_lang: str
 
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
     try:
-        wav_bytes = to_wav_bytes(audio_input)
-        print(f"ASR: lang={source_lang}, style={style}, bytes={len(wav_bytes)}")
+        # Read raw bytes and pass directly to Groq — no conversion needed
+        # Groq supports webm, mp4, ogg, wav, flac, mp3 natively
+        if isinstance(audio_input, np.ndarray):
+            raw_bytes = to_wav_bytes(audio_input)
+            filename  = "audio.wav"
+        else:
+            with open(str(audio_input), "rb") as f:
+                raw_bytes = f.read()
+            ext      = os.path.splitext(str(audio_input))[1] or ".webm"
+            filename = f"audio{ext}"
 
-        # Minimum length: ~1 second at 16kHz 16-bit = ~32KB
-        if len(wav_bytes) < 32000:
+        print(f"ASR: lang={source_lang}, style={style}, bytes={len(raw_bytes)}, file={filename}")
+
+        if len(raw_bytes) < 1000:
             return {
                 "status": "too_short",
                 "error": "Recording too short. Please speak for at least 3 seconds.",
@@ -262,8 +271,8 @@ def transcribe_audio(audio_input: Any, style: str = "standard", source_lang: str
                 "style": style, "segments": [], "device": DEVICE, "model": WHISPER_MODEL,
             }
 
-        native_text_raw = groq_transcribe_native(wav_bytes, source_lang)
-        english_text    = groq_translate_english(wav_bytes, source_lang)
+        native_text_raw = groq_transcribe_native(raw_bytes, source_lang, filename)
+        english_text    = groq_translate_english(raw_bytes, source_lang, filename)
         native_text     = native_text_raw  # already filtered in groq_transcribe_native
 
         print(f"ASR English     : {english_text[:80] if english_text else '(empty)'}")
