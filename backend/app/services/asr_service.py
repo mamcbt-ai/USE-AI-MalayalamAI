@@ -201,13 +201,11 @@ def groq_transcribe_native(raw_bytes: bytes, source_lang: str, filename: str = "
         )
         text = _extract_text(result)
         print(f"Groq native result: '{text[:120] if text else '(empty)'}'")
-        if is_hallucination(text):
-            print(f"Native hallucination rejected: {text[:60]}")
-            return ""
-        return text
+        # Temporarily return ALL output without filtering to diagnose
+        return text or ""
     except Exception as e:
         print(f"Groq native ERROR: {type(e).__name__}: {e}")
-        return ""
+        return f"[ERROR: {type(e).__name__}]"
 
 
 def groq_translate_english(raw_bytes: bytes, source_lang: str, filename: str = "audio.webm") -> str:
@@ -223,13 +221,11 @@ def groq_translate_english(raw_bytes: bytes, source_lang: str, filename: str = "
         )
         text = _extract_text(result)
         print(f"Groq english result: '{text[:120] if text else '(empty)'}'")
-        if is_hallucination(text):
-            print(f"English hallucination rejected: {text[:60]}")
-            return ""
-        return text
+        # Temporarily return ALL output without filtering to diagnose
+        return text or ""
     except Exception as e:
         print(f"Groq english ERROR: {type(e).__name__}: {e}")
-        return ""
+        return f"[ERROR: {type(e).__name__}]"
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

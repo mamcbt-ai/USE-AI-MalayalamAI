@@ -127,11 +127,14 @@ async def process_audio(
         })
 
     if not english_text and not native_text:
+        # Return debug info so we can see what Groq actually returned
         return JSONResponse(content={
             "status":  "no_speech",
             "message": "No speech detected. Please speak clearly and try again.",
-            "english_text": "", "native_text": "",
+            "english_text": result.get("native_text_raw", ""),
+            "native_text": result.get("native_text_raw", ""),
             "source_lang": source_lang, "source_language_name": lang_name,
+            "debug": f"raw={result.get('native_text_raw','')[:100]}",
         })
 
     refined = refine_english(english_text) if english_text else ""
