@@ -106,7 +106,18 @@ async def process_audio(
     source_lang = _validate_lang(lang)
 
     content  = await _read_audio_bytes(file)
-    suffix   = os.path.splitext(file.filename or "audio.webm")[1] or ".webm"
+    # Detect suffix from filename OR content-type header
+    fname    = file.filename or ""
+    ctype    = file.content_type or ""
+    if ".mp4" in fname or "mp4" in ctype:
+        suffix = ".mp4"
+    elif ".ogg" in fname or "ogg" in ctype:
+        suffix = ".ogg"
+    elif ".wav" in fname or "wav" in ctype:
+        suffix = ".wav"
+    else:
+        suffix = ".webm"
+    print(f"audio.py: received filename={fname}, content_type={ctype}, suffix={suffix}")
     tmp_path = None
 
     try:
