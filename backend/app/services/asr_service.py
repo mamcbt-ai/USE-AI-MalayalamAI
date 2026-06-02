@@ -199,12 +199,13 @@ def groq_transcribe_native(wav_bytes: bytes, source_lang: str) -> str:
             prompt=f"This is {lang_name} speech including colloquial and slang expressions.",
         )
         text = _extract_text(result)
+        print(f"Groq native raw ({source_lang}): {text[:100]}")
         if is_hallucination(text):
             print(f"Native hallucination rejected: {text[:60]}")
             return ""
+        # Script check relaxed — log mismatch but still return text
         if not has_expected_script(text, source_lang):
-            print(f"Native script mismatch ({source_lang}), text rejected: {text[:60]}")
-            return ""
+            print(f"Native script mismatch ({source_lang}), returning anyway: {text[:60]}")
         return text
     except Exception as e:
         print(f"Groq native transcription error: {e}")
