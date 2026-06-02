@@ -100,26 +100,65 @@ def has_expected_script(text: str, lang: str) -> bool:
 
 # ── Audio helpers ─────────────────────────────────────────────────────────────
 def to_wav_bytes(audio_input: Any) -> bytes:
-    """Convert file path or numpy array → 16 kHz mono WAV bytes."""
+    """
+    Convert audio input → 16 kHz mono WAV bytes for Groq API.
+    Handles: numpy array, file path (WebM/MP4/WAV/etc), raw bytes.
+    Uses PyAV to decode WebM/Opus from browser MediaRecorder.
+    """
     if isinstance(audio_input, np.ndarray):
         audio = audio_input
-    elif isinstance(audio_input, (bytes, bytearray)):
-        # Raw bytes — write to temp file first
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
-            tmp.write(audio_input)
-            tmp_path = tmp.name
-        try:
-            audio, _ = sf.read(tmp_path, dtype="float32")
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
     else:
-        audio, _ = sf.read(audio_input, dtype="float32")
+        # Resolve to file path
+        if isinstance(audio_input, (bytes, bytearray)):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+                tmp.write(audio_input)
+                file_path = tmp.name
+            owns_file = True
+        else:
+            file_path = str(audio_input)
+            owns_file = False
+
+        audio = None
+
+        # Try PyAV first (handles WebM/Opus from browser)
+        try:
+            import av
+            import io as _io
+            with open(file_path, "rb") as f:
+                raw = f.read()
+            container = av.open(_io.BytesIO(raw))
+            samples = []
+            for frame in container.decode(audio=0):
+                arr = frame.to_ndarray()
+                if arr.ndim > 1:
+                    arr = arr.mean(axis=0)
+                samples.append(arr.astype(np.float32))
+            if samples:
+                audio = np.concatenate(samples)
+                if audio.max() > 1.5:
+                    audio = audio / 32768.0
+                print(f"PyAV decode OK: {audio.shape}, max={audio.max():.3f}")
+        except Exception as e:
+            print(f"PyAV decode failed: {e}")
+
+        # Fallback: soundfile (handles WAV, FLAC, OGG)
+        if audio is None:
+            try:
+                audio, _ = sf.read(file_path, dtype="float32")
+                print(f"soundfile decode OK: {audio.shape}")
+            except Exception as e:
+                print(f"soundfile decode failed: {e}")
+
+        if owns_file and os.path.exists(file_path):
+            os.unlink(file_path)
+
+        if audio is None:
+            raise ValueError("Could not decode audio file — unsupported format")
 
     if len(audio.shape) > 1:
         audio = audio.mean(axis=1)
 
-    # Normalize peak to avoid clipping distortion
+    # Normalize peak
     peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
     if peak > 0.95:
         audio = audio * (0.95 / peak)
