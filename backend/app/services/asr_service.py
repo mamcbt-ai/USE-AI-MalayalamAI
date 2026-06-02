@@ -308,6 +308,7 @@ def transcribe_audio(audio_input: Any, style: str = "standard", source_lang: str
 
 def transcribe_audio_stream(
     audio_input: Any,
+    filename: str = "recording.webm",
     style: str = "standard",
     source_lang: str = "ml",
 ) -> Generator[Dict[str, Any], None, None]:
@@ -317,12 +318,17 @@ def transcribe_audio_stream(
     """
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
     try:
-        wav_bytes = to_wav_bytes(audio_input)
+        # Use raw bytes directly
+        if isinstance(audio_input, (bytes, bytearray)):
+            raw_bytes = bytes(audio_input)
+        else:
+            with open(str(audio_input), "rb") as f:
+                raw_bytes = f.read()
 
         yield {"type": "status", "message": f"Processing {lang_name} audio..."}
 
-        english_text = groq_translate_english(wav_bytes, source_lang)
-        native_text  = groq_transcribe_native(wav_bytes, source_lang)
+        english_text = groq_translate_english(raw_bytes, source_lang, filename)
+        native_text  = groq_transcribe_native(raw_bytes, source_lang, filename)
 
         if english_text:
             yield {"type": "english_segment", "text": english_text, "accumulated": english_text}

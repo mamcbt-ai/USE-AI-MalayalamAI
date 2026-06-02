@@ -1,13 +1,12 @@
 """
 audio.py — Audio processing router
-Endpoints: POST /audio/process (JSON), POST /audio/process-stream (SSE)
-Response contract: english_text, native_text, source_lang, source_language_name
+Primary path: raw upload bytes sent directly to Groq (no conversion)
+Fallback: WAV conversion only if needed
 """
 import json
 import os
-import tempfile
 from datetime import date
-
+from pathlib import Path
 import asyncio
 import threading
 
@@ -25,14 +24,14 @@ from app.models.audio_record import AudioRecord
 from app.models.user import User
 from app.core.db import engine
 
-router       = APIRouter(prefix="/audio", tags=["audio"])
+router        = APIRouter(prefix="/audio", tags=["audio"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-limiter      = Limiter(key_func=get_remote_address)
+limiter       = Limiter(key_func=get_remote_address)
 
 ALLOWED_LANGS = {"ml", "ta", "te", "kn", "hi"}
 
 
-# ── Auth helpers ──────────────────────────────────────────────────────────────
+# ── Auth ──────────────────────────────────────────────────────────────────────
 def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     email = decode_token(token)
     if not email:
@@ -78,7 +77,7 @@ def _save_record(filename: str, source_lang: str, english_text: str,
             language=source_lang,
             transcript=english_text,
             translation=refined,
-            malayalam_output=native_text,  # field kept for DB compatibility
+            malayalam_output=native_text,
         )
         with Session(engine) as session:
             session.add(record)
@@ -87,12 +86,7 @@ def _save_record(filename: str, source_lang: str, english_text: str,
         print(f"DB save error: {db_err}")
 
 
-# ── Audio decoding (handles WebM/Opus from browser) ───────────────────────────
-async def _read_audio_bytes(file: UploadFile) -> bytes:
-    return await file.read()
-
-
-# ── POST /audio/process — primary JSON endpoint ───────────────────────────────
+# ── POST /audio/process ───────────────────────────────────────────────────────
 @router.post("/process")
 @limiter.limit("20/minute")
 async def process_audio(
@@ -105,72 +99,58 @@ async def process_audio(
     check_usage_limit(current_user)
     source_lang = _validate_lang(lang)
 
-    content  = await _read_audio_bytes(file)
-    # Detect suffix from filename OR content-type header
-    fname    = file.filename or ""
-    ctype    = file.content_type or ""
-    if ".mp4" in fname or "mp4" in ctype:
-        suffix = ".mp4"
-    elif ".ogg" in fname or "ogg" in ctype:
-        suffix = ".ogg"
-    elif ".wav" in fname or "wav" in ctype:
-        suffix = ".wav"
-    else:
-        suffix = ".webm"
-    print(f"audio.py: received filename={fname}, content_type={ctype}, suffix={suffix}")
-    tmp_path = None
+    # Read raw bytes — pass directly to Groq (no conversion)
+    raw_bytes = await file.read()
+    filename  = file.filename or "recording.webm"
+    suffix    = Path(filename).suffix.lower() or ".webm"
 
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
+    print(f"audio.py: filename={filename} suffix={suffix} bytes={len(raw_bytes)} content_type={file.content_type}")
 
-        result = transcribe_audio(tmp_path, style=style, source_lang=source_lang)
+    result = transcribe_audio(
+        audio_input=raw_bytes,
+        filename=filename,
+        style=style,
+        source_lang=source_lang,
+    )
 
-        english_text = result.get("english_text", "")
-        native_text  = result.get("native_text",  "")
-        lang_name    = result.get("source_language_name", source_lang)
+    english_text = result.get("english_text", "")
+    native_text  = result.get("native_text",  "")
+    lang_name    = result.get("source_language_name", source_lang)
+    status       = result.get("status", "failed")
 
-        if not english_text and not native_text:
-            return JSONResponse(content={
-                "status":  "no_speech",
-                "message": "No speech detected. Please speak clearly and try again.",
-                "english_text": "",
-                "native_text":  "",
-                "source_lang":  source_lang,
-                "source_language_name": lang_name,
-            })
-
-        refined = refine_english(english_text) if english_text else ""
-        _save_record(file.filename or "recording", source_lang,
-                     english_text, refined, native_text)
-
+    if status == "too_short":
         return JSONResponse(content={
-            "status":       "success",
-            "english_text": english_text,
-            "native_text":  native_text,
-            "refined_text": refined,
-            "source_lang":  source_lang,
-            "source_language_name": lang_name,
-            "style":  style,
-            "model":  result.get("model",  ""),
-            "device": result.get("device", ""),
+            "status": "too_short",
+            "message": result.get("error", "Recording too short."),
+            "english_text": "", "native_text": "",
+            "source_lang": source_lang, "source_language_name": lang_name,
         })
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"process_audio error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
+    if not english_text and not native_text:
+        return JSONResponse(content={
+            "status":  "no_speech",
+            "message": "No speech detected. Please speak clearly and try again.",
+            "english_text": "", "native_text": "",
+            "source_lang": source_lang, "source_language_name": lang_name,
+        })
+
+    refined = refine_english(english_text) if english_text else ""
+    _save_record(filename, source_lang, english_text, refined, native_text)
+
+    return JSONResponse(content={
+        "status":       "success",
+        "english_text": english_text,
+        "native_text":  native_text,
+        "refined_text": refined,
+        "source_lang":  source_lang,
+        "source_language_name": lang_name,
+        "style":  style,
+        "model":  result.get("model", ""),
+        "device": result.get("device", ""),
+    })
 
 
-# ── POST /audio/process-stream — SSE endpoint ────────────────────────────────
+# ── POST /audio/process-stream ────────────────────────────────────────────────
 @router.post("/process-stream")
 @limiter.limit("20/minute")
 async def process_audio_stream(
@@ -183,17 +163,8 @@ async def process_audio_stream(
     check_usage_limit(current_user)
     source_lang = _validate_lang(lang)
 
-    content  = await _read_audio_bytes(file)
-    suffix   = os.path.splitext(file.filename or "audio.webm")[1] or ".webm"
-    filename = file.filename or "recording.webm"
-    tmp_path = None
-
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    raw_bytes = await file.read()
+    filename  = file.filename or "recording.webm"
 
     async def event_generator():
         seg_queue: asyncio.Queue = asyncio.Queue()
@@ -201,7 +172,9 @@ async def process_audio_stream(
 
         def _run():
             try:
-                for seg in transcribe_audio_stream(tmp_path, style=style, source_lang=source_lang):
+                for seg in transcribe_audio_stream(
+                    raw_bytes, filename=filename, style=style, source_lang=source_lang
+                ):
                     asyncio.run_coroutine_threadsafe(seg_queue.put(seg), loop)
             except Exception as exc:
                 asyncio.run_coroutine_threadsafe(
@@ -219,7 +192,6 @@ async def process_audio_stream(
             seg = await seg_queue.get()
             if seg is None:
                 break
-
             t = seg.get("type", "")
             if t == "error":
                 yield f"data: {json.dumps(seg, ensure_ascii=False)}\n\n"
@@ -237,7 +209,7 @@ async def process_audio_stream(
                 refined       = refine_english(final_english) if final_english else ""
                 _save_record(filename, source_lang, final_english, refined, final_native)
                 payload = {
-                    "type":         "complete",
+                    "type": "complete",
                     "english_text": final_english,
                     "native_text":  final_native,
                     "refined_text": refined,
@@ -249,18 +221,8 @@ async def process_audio_stream(
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control":    "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection":       "keep-alive",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
