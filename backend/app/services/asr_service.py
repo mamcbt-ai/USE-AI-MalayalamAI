@@ -123,24 +123,24 @@ def to_wav_bytes(audio_input: Any) -> bytes:
 
         # Try PyAV first (handles WebM/Opus from browser)
         try:
-            import av
+            import av as _av
             import io as _io
             with open(file_path, "rb") as f:
                 raw = f.read()
-            print(f"PyAV: opening {len(raw)} bytes, file={file_path}")
-            container = av.open(_io.BytesIO(raw))
-            # Resample to 16kHz mono using PyAV resampler
-            resampler = av.AudioResampler(format='fltp', layout='mono', rate=16000)
-            samples = []
-            for frame in container.decode(audio=0):
-                for rf in resampler.resample(frame):
-                    arr = rf.to_ndarray()[0]  # mono, float32 planar
-                    samples.append(arr.astype(np.float32))
-            if samples:
-                audio = np.concatenate(samples)
-                if audio.size > 0 and np.max(np.abs(audio)) > 1.5:
-                    audio = audio / 32768.0
-                print(f"PyAV decode OK: shape={audio.shape}, max={audio.max():.3f}")
+            print(f"PyAV: opening {len(raw)} bytes")
+            # Resample to s16 mono 16kHz — matches Whisper's expected input
+            resampler = _av.audio.resampler.AudioResampler(
+                format="s16", layout="mono", rate=16000
+            )
+            chunks = []
+            with _av.open(_io.BytesIO(raw), mode="r", metadata_errors="ignore") as container:
+                for frame in container.decode(audio=0):
+                    for rf in resampler.resample(frame):
+                        arr = rf.to_ndarray()
+                        chunks.append(arr)
+            if chunks:
+                audio = np.concatenate(chunks, axis=-1).astype(np.float32) / 32768.0
+                print(f"PyAV decode OK: shape={audio.shape}, dtype={audio.dtype}, max={float(np.max(np.abs(audio))):.4f}")
         except Exception as e:
             print(f"PyAV decode failed: {e}")
 
