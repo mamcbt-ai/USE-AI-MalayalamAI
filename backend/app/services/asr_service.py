@@ -1,21 +1,24 @@
 """
-asr_service.py — Multilingual ASR via Groq Whisper large-v3
+asr_service.py — Multilingual ASR via Groq Whisper large-v3-turbo
 Supports: Malayalam (ml), Tamil (ta), Telugu (te), Kannada (kn), Hindi (hi)
 Response contract: english_text, native_text, source_lang, source_language_name
+
+Architecture:
+  - Raw audio bytes sent directly to Groq (no PyAV conversion needed)
+  - Groq handles WebM, MP4, OGG, WAV natively
+  - verbose_json for better text extraction and language detection
+  - Hallucination filtering only (no script gating)
 """
 import os
 import re
-import tempfile
 from collections import Counter
 from typing import Any, Dict, Generator
 
-import numpy as np
-import soundfile as sf
 from groq import Groq
 
 # ── Config ────────────────────────────────────────────────────────────────────
 GROQ_API_KEY  = os.environ.get("GROQ_API_KEY") or os.environ.get("GROQAPIKEY", "")
-WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "whisper-large-v3")
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "whisper-large-v3-turbo")  # Best: fast + accurate
 DEVICE        = "groq-api"
 
 if not GROQ_API_KEY:
@@ -31,13 +34,13 @@ LANGUAGE_NAMES: Dict[str, str] = {
     "hi": "Hindi",
 }
 
-# Unicode blocks for each language — used to validate native script output
+# Unicode blocks per language — for logging/validation
 SCRIPT_PATTERNS: Dict[str, str] = {
-    "ml": r"[ഀ-ൿ]",   # Malayalam
-    "ta": r"[஀-௿]",   # Tamil
-    "te": r"[ఀ-౿]",   # Telugu
-    "kn": r"[ಀ-೿]",   # Kannada
-    "hi": r"[ऀ-ॿ]",   # Devanagari (Hindi)
+    "ml": r"[ഀ-ൿ]",
+    "ta": r"[஀-௿]",
+    "te": r"[ఀ-౿]",
+    "kn": r"[ಀ-೿]",
+    "hi": r"[ऀ-ॿ]",
 }
 
 HALLUCINATION_PHRASES = [
@@ -46,7 +49,8 @@ HALLUCINATION_PHRASES = [
     "subscribe",
     "subtitles",
     "captions",
-    "music",
+    "[music]",
+    "[ music ]",
     "romantic music",
     "hello and welcome",
     "welcome to my channel",
@@ -55,6 +59,29 @@ HALLUCINATION_PHRASES = [
 ]
 
 print(f"ASR: Using Groq API ({WHISPER_MODEL})")
+
+
+# ── Style prompts ─────────────────────────────────────────────────────────────
+_STYLE_PROMPTS: Dict[str, str] = {
+    "standard":      "",  # No prompt — let Groq be natural
+    "formal":        "Formal speech.",
+    "casual":        "Casual conversational speech.",
+    "business":      "Business meeting speech.",
+    "academic":      "Academic lecture speech.",
+    "news":          "News broadcast speech.",
+    "literary":      "Literary narration.",
+    "simple":        "Simple everyday speech.",
+    "humorous":      "Humorous speech.",
+    "emotional":     "Emotional speech.",
+    "bullet":        "List-style speech.",
+}
+
+
+def _get_style_prompt(style: str, lang_name: str) -> str:
+    base = _STYLE_PROMPTS.get(style, "")
+    if base:
+        return f"This is {lang_name} {base}"
+    return f"This is {lang_name} speech."
 
 
 # ── Text helpers ──────────────────────────────────────────────────────────────
@@ -67,118 +94,32 @@ def cleanup_text(text: str) -> str:
 
 
 def is_hallucination(text: str) -> bool:
-    if not text or len(text.strip()) < 3:
+    if not text or len(text.strip()) < 2:
         return True
     lower = text.lower().strip()
     if any(p in lower for p in HALLUCINATION_PHRASES):
         return True
     compact = lower.replace(" ", "")
-    if compact:
+    if compact and len(compact) > 5:
         counts = Counter(compact)
         ratio = counts.most_common(1)[0][1] / max(len(compact), 1)
-        if ratio > 0.60:
+        if ratio > 0.65:
             return True
-    # Repeated word pattern (e.g. "the the the the")
     words = lower.split()
-    if len(words) >= 4 and len(set(words)) / len(words) < 0.4:
+    if len(words) >= 4 and len(set(words)) / len(words) < 0.35:
         return True
     return False
 
 
-def has_expected_script(text: str, lang: str) -> bool:
-    """
-    Return True if text contains at least some characters from the expected script.
-    Relaxed: only reject if there are ZERO native chars (not based on ratio).
-    """
-    if not text:
-        return False
+def has_native_script(text: str, lang: str) -> bool:
     pattern = SCRIPT_PATTERNS.get(lang)
     if not pattern:
-        return True  # unknown lang — accept
-    script_chars = len(re.findall(pattern, text))
-    return script_chars > 0  # accept as long as ANY native char is present
+        return True
+    return bool(re.search(pattern, text))
 
 
-# ── Audio helpers ─────────────────────────────────────────────────────────────
-def to_wav_bytes(audio_input: Any) -> bytes:
-    """
-    Convert audio input → 16 kHz mono WAV bytes for Groq API.
-    Handles: numpy array, file path (WebM/MP4/WAV/etc), raw bytes.
-    Uses PyAV to decode WebM/Opus from browser MediaRecorder.
-    """
-    if isinstance(audio_input, np.ndarray):
-        audio = audio_input
-    else:
-        # Resolve to file path
-        if isinstance(audio_input, (bytes, bytearray)):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
-                tmp.write(audio_input)
-                file_path = tmp.name
-            owns_file = True
-        else:
-            file_path = str(audio_input)
-            owns_file = False
-
-        audio = None
-
-        # Try PyAV first (handles WebM/Opus from browser)
-        try:
-            import av as _av
-            import io as _io
-            with open(file_path, "rb") as f:
-                raw = f.read()
-            print(f"PyAV: opening {len(raw)} bytes")
-            # Resample to s16 mono 16kHz — matches Whisper's expected input
-            resampler = _av.audio.resampler.AudioResampler(
-                format="s16", layout="mono", rate=16000
-            )
-            chunks = []
-            with _av.open(_io.BytesIO(raw), mode="r", metadata_errors="ignore") as container:
-                for frame in container.decode(audio=0):
-                    for rf in resampler.resample(frame):
-                        arr = rf.to_ndarray()
-                        chunks.append(arr)
-            if chunks:
-                audio = np.concatenate(chunks, axis=-1).astype(np.float32) / 32768.0
-                print(f"PyAV decode OK: shape={audio.shape}, dtype={audio.dtype}, max={float(np.max(np.abs(audio))):.4f}")
-        except Exception as e:
-            print(f"PyAV decode failed: {e}")
-
-        # Fallback: soundfile (handles WAV, FLAC, OGG)
-        if audio is None:
-            try:
-                audio, _ = sf.read(file_path, dtype="float32")
-                print(f"soundfile decode OK: {audio.shape}")
-            except Exception as e:
-                print(f"soundfile decode failed: {e}")
-
-        if owns_file and os.path.exists(file_path):
-            os.unlink(file_path)
-
-        if audio is None:
-            raise ValueError("Could not decode audio file — unsupported format")
-
-    if len(audio.shape) > 1:
-        audio = audio.mean(axis=1)
-
-    # Normalize peak
-    peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
-    if peak > 0.95:
-        audio = audio * (0.95 / peak)
-
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        sf.write(tmp.name, audio, 16000)
-        tmp_path = tmp.name
-
-    try:
-        with open(tmp_path, "rb") as f:
-            return f.read()
-    finally:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-
-
-def _extract_text(result: Any) -> str:
+def _extract_from_verbose(result: Any) -> str:
+    """Extract text from verbose_json or text response."""
     if result is None:
         return ""
     if hasattr(result, "text"):
@@ -187,73 +128,84 @@ def _extract_text(result: Any) -> str:
 
 
 # ── Groq API calls ────────────────────────────────────────────────────────────
-def groq_transcribe_native(raw_bytes: bytes, source_lang: str, filename: str = "audio.webm") -> str:
-    """Transcribe audio in native script using Groq Whisper. Sends raw bytes directly."""
+def groq_transcribe_native(raw_bytes: bytes, source_lang: str,
+                            filename: str = "recording.webm", style: str = "standard") -> str:
+    """Transcribe audio in native script. Sends raw bytes directly to Groq."""
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
-    print(f"Groq native: filename={filename}, bytes={len(raw_bytes)}, lang={source_lang}")
+    prompt = _get_style_prompt(style, lang_name)
+    print(f"Groq native: lang={source_lang}, bytes={len(raw_bytes)}, file={filename}")
     try:
         result = groq_client.audio.transcriptions.create(
             file=(filename, raw_bytes),
             model=WHISPER_MODEL,
             language=source_lang,
-            response_format="text",
-            prompt=f"This is {lang_name} speech including colloquial and slang expressions.",
+            response_format="verbose_json",
+            temperature=0.0,
+            prompt=prompt,
         )
-        text = _extract_text(result)
-        print(f"Groq native result: '{text[:120] if text else '(empty)'}'")
-        # Temporarily return ALL output without filtering to diagnose
-        return text or ""
+        text = _extract_from_verbose(result)
+        detected = getattr(result, "language", source_lang)
+        print(f"Groq native result (detected={detected}): '{text[:120] if text else '(empty)'}'")
+        has_script = has_native_script(text, source_lang)
+        if not has_script:
+            print(f"  -> Warning: no {lang_name} script chars in output")
+        return text
     except Exception as e:
         print(f"Groq native ERROR: {type(e).__name__}: {e}")
-        return f"[ERROR: {type(e).__name__}]"
+        return ""
 
 
-def groq_translate_english(raw_bytes: bytes, source_lang: str, filename: str = "audio.webm") -> str:
-    """Translate audio to English using Groq Whisper. Sends raw bytes directly."""
+def groq_translate_english(raw_bytes: bytes, source_lang: str,
+                             filename: str = "recording.webm", style: str = "standard") -> str:
+    """Translate audio to English. Sends raw bytes directly to Groq."""
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
-    print(f"Groq translate: filename={filename}, bytes={len(raw_bytes)}")
+    prompt = _get_style_prompt(style, lang_name)
+    print(f"Groq translate: lang={source_lang}, bytes={len(raw_bytes)}, file={filename}")
     try:
         result = groq_client.audio.translations.create(
             file=(filename, raw_bytes),
             model=WHISPER_MODEL,
-            response_format="text",
-            prompt=f"Translate this {lang_name} speech accurately into natural English.",
+            response_format="verbose_json",
+            temperature=0.0,
+            prompt=prompt,
         )
-        text = _extract_text(result)
+        text = _extract_from_verbose(result)
         print(f"Groq english result: '{text[:120] if text else '(empty)'}'")
-        # Temporarily return ALL output without filtering to diagnose
-        return text or ""
+        if is_hallucination(text):
+            print(f"  -> English hallucination rejected")
+            return ""
+        return text
     except Exception as e:
         print(f"Groq english ERROR: {type(e).__name__}: {e}")
-        return f"[ERROR: {type(e).__name__}]"
+        return ""
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
-def transcribe_audio(audio_input: Any, filename: str = "recording.webm", style: str = "standard", source_lang: str = "ml") -> Dict[str, Any]:
+def transcribe_audio(audio_input: Any, filename: str = "recording.webm",
+                     style: str = "standard", source_lang: str = "ml") -> Dict[str, Any]:
     """
     Transcribe audio and return stable language-neutral dict.
-    Returns: english_text, native_text, native_text_raw, source_lang, source_language_name
+    audio_input: bytes (raw file) or file path string
     """
-    # Validate language
     if source_lang not in LANGUAGE_NAMES:
         return {
             "status": "failed", "error": f"Unsupported language: {source_lang}",
-            "english_text": "", "native_text": "", "native_text_raw": "",
+            "english_text": "", "native_text": "",
             "source_lang": source_lang, "source_language_name": source_lang,
             "style": style, "segments": [], "device": DEVICE, "model": WHISPER_MODEL,
         }
 
-    lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
+    lang_name = LANGUAGE_NAMES[source_lang]
+
     try:
-        # Read raw bytes and pass directly to Groq — no conversion needed
-        # Groq supports webm, mp4, ogg, wav, flac, mp3 natively
-        if isinstance(audio_input, np.ndarray):
-            raw_bytes = to_wav_bytes(audio_input)
-            filename  = "audio.wav"
+        # Get raw bytes
+        if isinstance(audio_input, (bytes, bytearray)):
+            raw_bytes = bytes(audio_input)
         else:
             with open(str(audio_input), "rb") as f:
                 raw_bytes = f.read()
-            ext      = os.path.splitext(str(audio_input))[1] or ".webm"
+            import os as _os
+            ext = _os.path.splitext(str(audio_input))[1] or ".webm"
             filename = f"audio{ext}"
 
         print(f"ASR: lang={source_lang}, style={style}, bytes={len(raw_bytes)}, file={filename}")
@@ -262,24 +214,28 @@ def transcribe_audio(audio_input: Any, filename: str = "recording.webm", style: 
             return {
                 "status": "too_short",
                 "error": "Recording too short. Please speak for at least 3 seconds.",
-                "english_text": "", "native_text": "", "native_text_raw": "",
+                "english_text": "", "native_text": "",
                 "source_lang": source_lang, "source_language_name": lang_name,
                 "style": style, "segments": [], "device": DEVICE, "model": WHISPER_MODEL,
             }
 
-        native_text_raw = groq_transcribe_native(raw_bytes, source_lang, filename)
-        english_text    = groq_translate_english(raw_bytes, source_lang, filename)
-        native_text     = native_text_raw  # already filtered in groq_transcribe_native
+        # Run both passes
+        native_text  = groq_transcribe_native(raw_bytes, source_lang, filename, style)
+        english_text = groq_translate_english(raw_bytes, source_lang, filename, style)
 
-        print(f"ASR English     : {english_text[:80] if english_text else '(empty)'}")
-        print(f"ASR Native (raw): {native_text_raw[:80] if native_text_raw else '(empty)'}")
+        # Only filter hard hallucinations
+        if is_hallucination(native_text):
+            print(f"Native hallucination rejected: {native_text[:60]}")
+            native_text = ""
+        # english already filtered in groq_translate_english
+
+        print(f"Final — English: '{english_text[:80] if english_text else '(empty)'}' | Native: '{native_text[:80] if native_text else '(empty)'}'")
 
         return {
             "status": "success",
-            "english_text":    english_text,
-            "native_text":     native_text,
-            "native_text_raw": native_text_raw,
-            "source_lang":     source_lang,
+            "english_text": english_text,
+            "native_text":  native_text,
+            "source_lang":  source_lang,
             "source_language_name": lang_name,
             "style":    style,
             "segments": [],
@@ -289,32 +245,18 @@ def transcribe_audio(audio_input: Any, filename: str = "recording.webm", style: 
     except Exception as e:
         print(f"ASR Error: {e}")
         return {
-            "status": "failed",
-            "error":  str(e),
-            "english_text": "",
-            "native_text":  "",
-            "source_lang":  source_lang,
-            "source_language_name": lang_name,
-            "style":    style,
-            "segments": [],
-            "device":   DEVICE,
-            "model":    WHISPER_MODEL,
+            "status": "failed", "error": str(e),
+            "english_text": "", "native_text": "",
+            "source_lang": source_lang, "source_language_name": lang_name,
+            "style": style, "segments": [], "device": DEVICE, "model": WHISPER_MODEL,
         }
 
 
-def transcribe_audio_stream(
-    audio_input: Any,
-    filename: str = "recording.webm",
-    style: str = "standard",
-    source_lang: str = "ml",
-) -> Generator[Dict[str, Any], None, None]:
-    """
-    Streaming variant — yields SSE-compatible dicts.
-    Event types: status, english_segment, native_segment, complete, error
-    """
+def transcribe_audio_stream(audio_input: Any, filename: str = "recording.webm",
+                             style: str = "standard", source_lang: str = "ml") -> Generator[Dict, None, None]:
+    """Streaming variant — yields SSE-compatible dicts."""
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
     try:
-        # Use raw bytes directly
         if isinstance(audio_input, (bytes, bytearray)):
             raw_bytes = bytes(audio_input)
         else:
@@ -323,21 +265,24 @@ def transcribe_audio_stream(
 
         yield {"type": "status", "message": f"Processing {lang_name} audio..."}
 
-        english_text = groq_translate_english(raw_bytes, source_lang, filename)
-        native_text  = groq_transcribe_native(raw_bytes, source_lang, filename)
+        english_text = groq_translate_english(raw_bytes, source_lang, filename, style)
+        native_text  = groq_transcribe_native(raw_bytes, source_lang, filename, style)
+
+        if is_hallucination(native_text):
+            native_text = ""
 
         if english_text:
             yield {"type": "english_segment", "text": english_text, "accumulated": english_text}
         if native_text:
-            yield {"type": "native_segment",  "text": native_text,  "accumulated": native_text}
+            yield {"type": "native_segment", "text": native_text, "accumulated": native_text}
 
         yield {
-            "type":   "complete",
+            "type": "complete",
             "english_text": english_text,
             "native_text":  native_text,
             "source_lang":  source_lang,
             "source_language_name": lang_name,
-            "style":  style,
+            "style": style,
         }
     except Exception as e:
         print(f"ASR stream error: {e}")
