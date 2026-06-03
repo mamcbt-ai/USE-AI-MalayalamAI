@@ -134,7 +134,7 @@ async def process_audio(
             "source_lang": source_lang, "source_language_name": lang_name,
         })
 
-    refined = refine_english(english_text) if english_text else ""
+    refined = refine_english(english_text, style=style, source_lang=source_lang) if english_text else ""
     _save_record(filename, source_lang, english_text, refined, native_text)
 
     return JSONResponse(content={
