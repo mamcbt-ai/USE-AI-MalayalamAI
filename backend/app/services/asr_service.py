@@ -18,7 +18,7 @@ from groq import Groq
 
 # ── Config ────────────────────────────────────────────────────────────────────
 GROQ_API_KEY  = os.environ.get("GROQ_API_KEY") or os.environ.get("GROQAPIKEY", "")
-WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "whisper-large-v3-turbo")  # Best: fast + accurate
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "whisper-large-v3")  # Best multilingual quality
 DEVICE        = "groq-api"
 
 if not GROQ_API_KEY:
@@ -134,6 +134,15 @@ def groq_transcribe_native(raw_bytes: bytes, source_lang: str,
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
     prompt = _get_style_prompt(style, lang_name)
     print(f"Groq native: lang={source_lang}, bytes={len(raw_bytes)}, file={filename}")
+    # Force native script output in prompt
+    script_prompts = {
+        "ml": "ഈ ശബ്ദം മലയാളത്തിൽ ലിപ്യന്തരണം ചെയ്യുക.",  # Transcribe in Malayalam script
+        "ta": "இந்த ஒலியை தமிழில் எழுதுக.",
+        "te": "ఈ శబ్దాన్ని తెలుగులో రాయండి.",
+        "kn": "ಈ ಧ್ವನಿಯನ್ನು ಕನ್ನಡದಲ್ಲಿ ಬರೆಯಿರಿ.",
+        "hi": "इस आवाज़ को हिंदी में लिखें।",
+    }
+    native_prompt = script_prompts.get(source_lang, prompt)
     try:
         result = groq_client.audio.transcriptions.create(
             file=(filename, raw_bytes),
@@ -141,7 +150,7 @@ def groq_transcribe_native(raw_bytes: bytes, source_lang: str,
             language=source_lang,
             response_format="verbose_json",
             temperature=0.0,
-            prompt=prompt,
+            prompt=native_prompt,
         )
         text = _extract_from_verbose(result)
         detected = getattr(result, "language", source_lang)
@@ -155,29 +164,49 @@ def groq_transcribe_native(raw_bytes: bytes, source_lang: str,
         return ""
 
 
-def groq_translate_english(raw_bytes: bytes, source_lang: str,
-                             filename: str = "recording.webm", style: str = "standard") -> str:
-    """Translate audio to English. Sends raw bytes directly to Groq."""
-    lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
-    prompt = _get_style_prompt(style, lang_name)
-    print(f"Groq translate: lang={source_lang}, bytes={len(raw_bytes)}, file={filename}")
-    try:
-        result = groq_client.audio.translations.create(
-            file=(filename, raw_bytes),
-            model=WHISPER_MODEL,
-            response_format="verbose_json",
-            temperature=0.0,
-            prompt=prompt,
-        )
-        text = _extract_from_verbose(result)
-        print(f"Groq english result: '{text[:120] if text else '(empty)'}'")
-        if is_hallucination(text):
-            print(f"  -> English hallucination rejected")
-            return ""
-        return text
-    except Exception as e:
-        print(f"Groq english ERROR: {type(e).__name__}: {e}")
+def translate_to_english_gpt(native_text: str, source_lang: str, style: str = "standard") -> str:
+    """
+    Translate native text to English using GPT-4o-mini.
+    whisper-large-v3-turbo does NOT support the translate task,
+    so we use GPT instead for better quality translation.
+    """
+    if not native_text or not native_text.strip():
         return ""
+
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        print("translate_to_english_gpt: no OPENAI_API_KEY — returning native text as-is")
+        return native_text
+
+    lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
+    from app.services.translation_service import STYLE_INSTRUCTIONS
+    style_instruction = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["standard"])
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are an expert translator from {lang_name} to English. "
+                        f"{style_instruction} "
+                        "Return only the English translation — no explanations."
+                    ),
+                },
+                {"role": "user", "content": native_text},
+            ],
+            max_tokens=800,
+            temperature=0.3,
+        )
+        result = response.choices[0].message.content.strip()
+        print(f"GPT-4o-mini translation ({style}): '{result[:100]}'")
+        return result
+    except Exception as e:
+        print(f"GPT translate error: {e} — returning native text")
+        return native_text
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -219,15 +248,16 @@ def transcribe_audio(audio_input: Any, filename: str = "recording.webm",
                 "style": style, "segments": [], "device": DEVICE, "model": WHISPER_MODEL,
             }
 
-        # Run both passes
-        native_text  = groq_transcribe_native(raw_bytes, source_lang, filename, style)
-        english_text = groq_translate_english(raw_bytes, source_lang, filename, style)
+        # Pass 1: Native script transcription (turbo model)
+        native_text = groq_transcribe_native(raw_bytes, source_lang, filename, style)
 
-        # Only filter hard hallucinations
+        # Filter hallucinations
         if is_hallucination(native_text):
             print(f"Native hallucination rejected: {native_text[:60]}")
             native_text = ""
-        # english already filtered in groq_translate_english
+
+        # Pass 2: English translation via GPT-4o-mini (turbo doesn't support translate)
+        english_text = translate_to_english_gpt(native_text, source_lang, style) if native_text else ""
 
         print(f"Final — English: '{english_text[:80] if english_text else '(empty)'}' | Native: '{native_text[:80] if native_text else '(empty)'}'")
 
@@ -265,11 +295,10 @@ def transcribe_audio_stream(audio_input: Any, filename: str = "recording.webm",
 
         yield {"type": "status", "message": f"Processing {lang_name} audio..."}
 
-        english_text = groq_translate_english(raw_bytes, source_lang, filename, style)
         native_text  = groq_transcribe_native(raw_bytes, source_lang, filename, style)
-
         if is_hallucination(native_text):
             native_text = ""
+        english_text = translate_to_english_gpt(native_text, source_lang, style) if native_text else ""
 
         if english_text:
             yield {"type": "english_segment", "text": english_text, "accumulated": english_text}
