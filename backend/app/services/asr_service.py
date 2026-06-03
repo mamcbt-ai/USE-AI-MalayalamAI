@@ -205,8 +205,10 @@ def translate_to_english_gpt(native_text: str, source_lang: str, style: str = "s
         print(f"GPT-4o-mini translation ({style}): '{result[:100]}'")
         return result
     except Exception as e:
-        print(f"GPT translate error: {e} — returning native text")
-        return native_text
+        print(f"GPT translate error: {type(e).__name__}: {e}")
+        if "insufficient_quota" in str(e) or "429" in str(e):
+            print("GPT quota exceeded — returning empty (not copying native text)")
+        return ""  # Never copy native text into English field
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -259,14 +261,16 @@ def transcribe_audio(audio_input: Any, filename: str = "recording.webm",
         # Pass 2: English translation via GPT-4o-mini (turbo doesn't support translate)
         english_text = translate_to_english_gpt(native_text, source_lang, style) if native_text else ""
 
-        print(f"Final — English: '{english_text[:80] if english_text else '(empty)'}' | Native: '{native_text[:80] if native_text else '(empty)'}'")
+        translation_status = "success" if english_text else "unavailable"
+        print(f"Final — English ({translation_status}): '{english_text[:80] if english_text else '(empty)'}' | Native: '{native_text[:80] if native_text else '(empty)'}'")
 
         return {
-            "status": "success",
+            "status": "success" if native_text else "no_speech",
             "english_text": english_text,
             "native_text":  native_text,
             "source_lang":  source_lang,
             "source_language_name": lang_name,
+            "translation_status": translation_status,
             "style":    style,
             "segments": [],
             "device":   DEVICE,
